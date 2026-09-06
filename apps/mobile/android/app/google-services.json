@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "21519965328",
+    "firebase_url": "https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "raa-podham",
+    "storage_bucket": "raa-podham.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:21519965328:android:476e012890902de9a5cc15",
+        "android_client_info": {
+          "package_name": "com.dynamicarraytech.raa_podham"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAp_KqHrG46Y2fGfmL85UEpXCwc2rNkmeA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
