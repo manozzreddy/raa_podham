@@ -8,17 +8,24 @@ part 'membership_repository.g.dart';
 /// Wraps a ride's Firestore membership subcollection — the only class
 /// that should import `package:cloud_firestore`.
 class MembershipRepository {
-  MembershipRepository([FirebaseFirestore? firestore]) : _firestore = firestore ?? FirebaseFirestore.instance;
+  MembershipRepository([FirebaseFirestore? firestore])
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
   Stream<List<RiderProfile>> watchMembers(String rideId) {
-    return _firestore.collection('rides').doc(rideId).collection('members').snapshots().map(
+    return _firestore
+        .collection('rides')
+        .doc(rideId)
+        .collection('members')
+        .snapshots()
+        .map(
           (snapshot) => snapshot.docs
               .map(
                 (doc) => RiderProfile(
                   riderId: doc.id,
-                  displayName: (doc.data()['displayName'] as String?) ?? 'Rider',
+                  displayName:
+                      (doc.data()['displayName'] as String?) ?? 'Rider',
                 ),
               )
               .toList(growable: false),

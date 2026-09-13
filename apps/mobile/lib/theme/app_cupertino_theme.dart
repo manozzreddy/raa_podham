@@ -20,7 +20,9 @@ abstract final class AppCupertinoTheme {
   /// Builds a [CupertinoThemeData] matching [brightness].
   static CupertinoThemeData themeFor(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
-    final groundColor = isDark ? AppColors.predawnIndigo : AppColors.firstLightCream;
+    final groundColor = isDark
+        ? AppColors.predawnIndigo
+        : AppColors.firstLightCream;
     final textColor = isDark ? CupertinoColors.white : AppColors.asphaltInk;
 
     return CupertinoThemeData(
@@ -54,7 +56,10 @@ abstract final class AppCupertinoTheme {
           color: AppColors.sunriseAmber,
         ),
         pickerTextStyle: GoogleFonts.manrope(fontSize: 21, color: textColor),
-        dateTimePickerTextStyle: GoogleFonts.manrope(fontSize: 21, color: textColor),
+        dateTimePickerTextStyle: GoogleFonts.manrope(
+          fontSize: 21,
+          color: textColor,
+        ),
       ),
     );
   }

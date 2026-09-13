@@ -140,3 +140,66 @@ final class ApiClientProvider
 }
 
 String _$apiClientHash() => r'22083b50dff6cf65e092e8447f1c11fdee0a6b69';
+
+/// The app's current appearance choice — read by [RaaPodhamApp] on every
+/// build (to pick a `ThemeMode`/`Brightness`) and set from the Settings
+/// screen, so it lives here rather than under `features/settings/` the
+/// same way [authState] does.
+
+@ProviderFor(ThemeModeController)
+final themeModeControllerProvider = ThemeModeControllerProvider._();
+
+/// The app's current appearance choice — read by [RaaPodhamApp] on every
+/// build (to pick a `ThemeMode`/`Brightness`) and set from the Settings
+/// screen, so it lives here rather than under `features/settings/` the
+/// same way [authState] does.
+final class ThemeModeControllerProvider
+    extends $AsyncNotifierProvider<ThemeModeController, AppThemeMode> {
+  /// The app's current appearance choice — read by [RaaPodhamApp] on every
+  /// build (to pick a `ThemeMode`/`Brightness`) and set from the Settings
+  /// screen, so it lives here rather than under `features/settings/` the
+  /// same way [authState] does.
+  ThemeModeControllerProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'themeModeControllerProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$themeModeControllerHash();
+
+  @$internal
+  @override
+  ThemeModeController create() => ThemeModeController();
+}
+
+String _$themeModeControllerHash() =>
+    r'f793fb73f6cb753972488f891503eacea04de1e7';
+
+/// The app's current appearance choice — read by [RaaPodhamApp] on every
+/// build (to pick a `ThemeMode`/`Brightness`) and set from the Settings
+/// screen, so it lives here rather than under `features/settings/` the
+/// same way [authState] does.
+
+abstract class _$ThemeModeController extends $AsyncNotifier<AppThemeMode> {
+  FutureOr<AppThemeMode> build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<AsyncValue<AppThemeMode>, AppThemeMode>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<AppThemeMode>, AppThemeMode>,
+              AsyncValue<AppThemeMode>,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}

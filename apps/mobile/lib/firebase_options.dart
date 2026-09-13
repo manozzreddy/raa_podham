@@ -52,7 +52,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '21519965328',
     projectId: 'raa-podham',
     authDomain: 'raa-podham.firebaseapp.com',
-    databaseURL: 'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'raa-podham.firebasestorage.app',
     measurementId: 'G-K5XHTJQJJS',
   );
@@ -62,7 +63,8 @@ class DefaultFirebaseOptions {
     appId: '1:21519965328:android:476e012890902de9a5cc15',
     messagingSenderId: '21519965328',
     projectId: 'raa-podham',
-    databaseURL: 'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'raa-podham.firebasestorage.app',
   );
 
@@ -71,7 +73,8 @@ class DefaultFirebaseOptions {
     appId: '1:21519965328:ios:bfe07f382f8ba922a5cc15',
     messagingSenderId: '21519965328',
     projectId: 'raa-podham',
-    databaseURL: 'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'raa-podham.firebasestorage.app',
     iosBundleId: 'com.dynamicarraytech.raaPodham',
   );

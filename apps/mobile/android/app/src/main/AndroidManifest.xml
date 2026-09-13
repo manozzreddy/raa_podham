@@ -44,5 +44,13 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Required for url_launcher to detect/launch a UPI app (Google
+             Pay, PhonePe, Paytm, ...) from the About screen's "Support
+             the developer" upi:// link — see the package-visibility docs
+             linked above. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="upi"/>
+        </intent>
     </queries>
 </manifest>

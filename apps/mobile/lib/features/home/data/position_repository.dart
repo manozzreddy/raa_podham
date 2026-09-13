@@ -9,7 +9,8 @@ part 'position_repository.g.dart';
 /// Wraps the Realtime Database ride-positions node — the only class that
 /// should import `package:firebase_database`.
 class PositionRepository {
-  PositionRepository([FirebaseDatabase? database]) : _database = database ?? FirebaseDatabase.instance;
+  PositionRepository([FirebaseDatabase? database])
+    : _database = database ?? FirebaseDatabase.instance;
 
   final FirebaseDatabase _database;
 
@@ -18,17 +19,19 @@ class PositionRepository {
       final raw = event.snapshot.value;
       if (raw is! Map) return const <RiderPosition>[];
 
-      return raw.entries.map((entry) {
-        final value = Map<Object?, Object?>.from(entry.value as Map);
-        return RiderPosition(
-          riderId: entry.key as String,
-          location: LatLng(
-            (value['lat'] as num).toDouble(),
-            (value['lng'] as num).toDouble(),
-          ),
-          isOnline: value['isOnline'] as bool? ?? true,
-        );
-      }).toList(growable: false);
+      return raw.entries
+          .map((entry) {
+            final value = Map<Object?, Object?>.from(entry.value as Map);
+            return RiderPosition(
+              riderId: entry.key as String,
+              location: LatLng(
+                (value['lat'] as num).toDouble(),
+                (value['lng'] as num).toDouble(),
+              ),
+              isOnline: value['isOnline'] as bool? ?? true,
+            );
+          })
+          .toList(growable: false);
     });
   }
 }

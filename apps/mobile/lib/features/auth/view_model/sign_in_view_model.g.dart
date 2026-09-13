@@ -48,7 +48,7 @@ final class SignInViewModelProvider
   SignInViewModel create() => SignInViewModel();
 }
 
-String _$signInViewModelHash() => r'6b2e0c048e1e11ae08515bb5868bab0d6898a06c';
+String _$signInViewModelHash() => r'abc7fb58cc5e4d3890723bb77d528d8841b478a4';
 
 /// Drives the sign-in screen's two buttons.
 ///

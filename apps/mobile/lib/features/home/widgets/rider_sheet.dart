@@ -1,92 +1,130 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../../../theme/theme.dart';
-import '../models/rider.dart';
+import '../../../widgets/sheet_drag_area.dart';
+import '../../../widgets/sheet_drag_handle.dart';
+import '../view_model/home_view_model.dart';
+import 'home_sheet_chrome.dart';
 import 'rider_avatar_chip.dart';
+import 'sheet_action_button.dart';
 
-/// The draggable rider sheet's content: a header, a collapsed chip row +
-/// "End ride" CTA, or (once dragged up) a full vertical rider list.
+/// Sheet fractional extent past which the rider section switches from its
+/// collapsed chip row to the full vertical rider list.
+const double _sheetExpandedThreshold = 0.5;
+
+/// The draggable rider sheet's content: header, a persistent action row
+/// (Invite / End-Leave — always visible, not pinned to the bottom the
+/// way they used to be), then a collapsed [_RiderChipRow] or (once
+/// dragged up) a full [_RiderDetailList] — swapped based on
+/// [sheetExtent] rather than owned by the ViewModel, since it's pure
+/// drag-gesture UI state.
 class RiderSheet extends StatelessWidget {
   const RiderSheet({
     super.key,
     required this.rideName,
     required this.riders,
-    required this.selfLocation,
-    required this.isExpanded,
+    required this.isHost,
+    required this.sheetExtent,
+    required this.sheetController,
+    required this.sheetMinExtent,
+    required this.sheetMaxExtent,
     required this.scrollController,
-    required this.onEndRide,
+    required this.onInviteMore,
+    required this.onCta,
+    required this.onRiderTap,
   });
 
   final String rideName;
-  final List<Rider> riders;
-  final LatLng selfLocation;
-  final bool isExpanded;
+  final List<RiderVm> riders;
+  final bool isHost;
+  final ValueListenable<double> sheetExtent;
+  final DraggableScrollableController sheetController;
+  final double sheetMinExtent;
+  final double sheetMaxExtent;
   final ScrollController scrollController;
-  final VoidCallback onEndRide;
+  final VoidCallback onInviteMore;
+  final VoidCallback onCta;
+
+  /// Recenters the map on the tapped rider — see
+  /// `HomeViewModel.locationOf`.
+  final ValueChanged<String> onRiderTap;
 
   @override
   Widget build(BuildContext context) {
-    final sheetBackground = isCupertino
-        ? CupertinoTheme.of(context).scaffoldBackgroundColor
-        : Theme.of(context).colorScheme.surface;
+    final ctaLabel = isHost ? 'End ride' : 'Leave ride';
 
-    return Container(
-      decoration: BoxDecoration(
-        color: sheetBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
+    return HomeSheetContainer(
       child: Column(
         children: [
-          const SizedBox(height: 8),
-          const _DragHandle(),
-          const SizedBox(height: 12),
-          _HeaderRow(riderCount: riders.length, rideName: rideName),
+          SheetDragArea(
+            controller: sheetController,
+            minExtent: sheetMinExtent,
+            maxExtent: sheetMaxExtent,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                const SheetDragHandle(),
+                const SizedBox(height: 12),
+                _HeaderRow(riderCount: riders.length, rideName: rideName),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SheetActionButton(
+                    icon: isCupertino
+                        ? CupertinoIcons.person_add_solid
+                        : Icons.person_add_alt_1,
+                    label: 'Invite',
+                    onPressed: onInviteMore,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SheetActionButton(
+                    icon: isCupertino
+                        ? CupertinoIcons.square_arrow_right
+                        : Icons.logout,
+                    label: ctaLabel,
+                    onPressed: onCta,
+                    isDestructive: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: isExpanded
-                  ? _ExpandedRiderList(
-                      key: const ValueKey('expanded'),
-                      riders: riders,
-                      selfLocation: selfLocation,
-                      scrollController: scrollController,
-                    )
-                  : _CollapsedContent(
-                      key: const ValueKey('collapsed'),
-                      riders: riders,
-                      selfLocation: selfLocation,
-                      scrollController: scrollController,
-                      onEndRide: onEndRide,
-                    ),
+            child: ValueListenableBuilder<double>(
+              valueListenable: sheetExtent,
+              builder: (context, extent, child) {
+                final isExpanded = extent >= _sheetExpandedThreshold;
+                return AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: isExpanded
+                      ? _RiderDetailList(
+                          key: const ValueKey('expanded'),
+                          riders: riders,
+                          scrollController: scrollController,
+                          onRiderTap: onRiderTap,
+                        )
+                      : _CollapsedContent(
+                          key: const ValueKey('collapsed'),
+                          riders: riders,
+                          scrollController: scrollController,
+                          onRiderTap: onRiderTap,
+                        ),
+                );
+              },
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _DragHandle extends StatelessWidget {
-  const _DragHandle();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 36,
-      height: 4,
-      decoration: BoxDecoration(
-        color: AppColors.hairline,
-        borderRadius: BorderRadius.circular(2),
       ),
     );
   }
@@ -100,29 +138,29 @@ class _HeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final boldStyle = isCupertino
+    final nameStyle = isCupertino
         ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
-        : Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
-    final mutedStyle = isCupertino
+        : Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700);
+    final countStyle = isCupertino
         ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
         : Theme.of(context).textTheme.bodyMedium;
-    final mutedColor = mutedStyle?.color?.withValues(alpha: 0.7);
+    final countColor = countStyle?.color?.withValues(alpha: 0.7);
+    final countLabel = riderCount == 1 ? '1 rider' : '$riderCount riders';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$riderCount riders', style: boldStyle),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              rideName,
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: mutedStyle?.copyWith(color: mutedColor),
-            ),
+          Text(
+            rideName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: nameStyle,
           ),
+          const SizedBox(height: 2),
+          Text(countLabel, style: countStyle?.copyWith(color: countColor)),
         ],
       ),
     );
@@ -133,134 +171,159 @@ class _CollapsedContent extends StatelessWidget {
   const _CollapsedContent({
     super.key,
     required this.riders,
-    required this.selfLocation,
     required this.scrollController,
-    required this.onEndRide,
+    required this.onRiderTap,
   });
 
-  final List<Rider> riders;
-  final LatLng selfLocation;
+  final List<RiderVm> riders;
   final ScrollController scrollController;
-  final VoidCallback onEndRide;
+  final ValueChanged<String> onRiderTap;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       controller: scrollController,
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: 88,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: riders.length,
-              separatorBuilder: (context, index) => const SizedBox(width: 16),
-              itemBuilder: (context, index) {
-                final rider = riders[index];
-                return RiderAvatarChip(
-                  displayName: rider.displayName,
-                  distanceLabel: formatRiderDistance(rider, selfLocation),
-                  isOnline: rider.isOnline,
-                  isSelf: rider.isSelf,
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-          _EndRideButton(onPressed: onEndRide),
-        ],
-      ),
+      child: _RiderChipRow(riders: riders, onRiderTap: onRiderTap),
     );
   }
 }
 
-class _EndRideButton extends StatelessWidget {
-  const _EndRideButton({required this.onPressed});
+class _RiderChipRow extends StatelessWidget {
+  const _RiderChipRow({required this.riders, required this.onRiderTap});
 
-  final VoidCallback onPressed;
+  final List<RiderVm> riders;
+  final ValueChanged<String> onRiderTap;
 
   @override
   Widget build(BuildContext context) {
-    if (isCupertino) {
-      return SizedBox(
-        width: double.infinity,
-        child: CupertinoButton.filled(
-          borderRadius: BorderRadius.circular(999),
-          onPressed: onPressed,
-          child: const Text('End ride'),
-        ),
-      );
-    }
-
     return SizedBox(
-      width: double.infinity,
-      child: FilledButton(
-        onPressed: onPressed,
-        child: const Text('End ride'),
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: riders.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 16),
+        itemBuilder: (context, index) {
+          final rider = riders[index];
+          return RiderAvatarChip(
+            displayName: rider.displayName,
+            photoUrl: rider.photoUrl,
+            distanceLabel: rider.distanceLabel,
+            isOnline: rider.isOnline,
+            isSelf: rider.isSelf,
+            isHost: rider.isHost,
+            onTap: () => onRiderTap(rider.uid),
+          );
+        },
       ),
     );
   }
 }
 
-class _ExpandedRiderList extends StatelessWidget {
-  const _ExpandedRiderList({
+class _RiderDetailList extends StatelessWidget {
+  const _RiderDetailList({
     super.key,
     required this.riders,
-    required this.selfLocation,
     required this.scrollController,
+    required this.onRiderTap,
   });
 
-  final List<Rider> riders;
-  final LatLng selfLocation;
+  final List<RiderVm> riders;
   final ScrollController scrollController;
+  final ValueChanged<String> onRiderTap;
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
       controller: scrollController,
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 20),
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       itemCount: riders.length,
       separatorBuilder: (context, index) => const SizedBox.shrink(),
       itemBuilder: (context, index) {
         final rider = riders[index];
-        final distanceLabel = formatRiderDistance(rider, selfLocation);
-        final avatarBackground = rider.isSelf ? AppColors.sunriseAmber : AppColors.predawnIndigo;
-
-        if (isCupertino) {
-          return CupertinoListTile(
-            leading: RiderAvatarCircle(label: rider.displayName, diameter: 40, background: avatarBackground),
-            title: Text(rider.displayName),
-            additionalInfo: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(distanceLabel),
-                if (rider.isOnline) ...[
-                  const SizedBox(width: 8),
-                  const _LiveStatusPulse(size: 8),
-                ],
-              ],
-            ),
-            trailing: const CupertinoListTileChevron(),
-          );
-        }
-
-        return ListTile(
-          leading: RiderAvatarCircle(label: rider.displayName, diameter: 40, background: avatarBackground),
-          title: Text(rider.displayName),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(distanceLabel, style: Theme.of(context).textTheme.bodyMedium),
-              if (rider.isOnline) ...[
-                const SizedBox(width: 8),
-                const _LiveStatusPulse(size: 8),
-              ],
-            ],
-          ),
+        return _RiderDetailRow(
+          rider: rider,
+          onTap: () => onRiderTap(rider.uid),
         );
       },
+    );
+  }
+}
+
+class _RiderDetailRow extends StatelessWidget {
+  const _RiderDetailRow({required this.rider, required this.onTap});
+
+  final RiderVm rider;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarBackground = rider.isSelf
+        ? AppColors.sunriseAmber
+        : AppColors.predawnIndigo;
+    final sheetBackground = isCupertino
+        ? CupertinoTheme.of(context).scaffoldBackgroundColor
+        : Theme.of(context).colorScheme.surface;
+
+    final title = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(rider.displayName, overflow: TextOverflow.ellipsis),
+        ),
+        if (rider.isHost) ...[
+          const SizedBox(width: 6),
+          HostBadge(ringColor: sheetBackground),
+        ],
+      ],
+    );
+
+    if (isCupertino) {
+      return CupertinoListTile(
+        onTap: onTap,
+        leading: RiderAvatarCircle(
+          label: rider.displayName,
+          photoUrl: rider.photoUrl,
+          diameter: 40,
+          background: avatarBackground,
+        ),
+        title: title,
+        additionalInfo: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(rider.distanceLabel),
+            if (rider.isOnline) ...[
+              const SizedBox(width: 8),
+              const _LiveStatusPulse(size: 8),
+            ],
+          ],
+        ),
+        trailing: const CupertinoListTileChevron(),
+      );
+    }
+
+    return ListTile(
+      onTap: onTap,
+      leading: RiderAvatarCircle(
+        label: rider.displayName,
+        photoUrl: rider.photoUrl,
+        diameter: 40,
+        background: avatarBackground,
+      ),
+      title: title,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            rider.distanceLabel,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          if (rider.isOnline) ...[
+            const SizedBox(width: 8),
+            const _LiveStatusPulse(size: 8),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -276,7 +339,8 @@ class _LiveStatusPulse extends StatefulWidget {
   State<_LiveStatusPulse> createState() => _LiveStatusPulseState();
 }
 
-class _LiveStatusPulseState extends State<_LiveStatusPulse> with SingleTickerProviderStateMixin {
+class _LiveStatusPulseState extends State<_LiveStatusPulse>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1400),
@@ -319,7 +383,10 @@ class _LiveStatusPulseState extends State<_LiveStatusPulse> with SingleTickerPro
     return Container(
       width: size,
       height: size,
-      decoration: const BoxDecoration(color: AppColors.sunRimGold, shape: BoxShape.circle),
+      decoration: const BoxDecoration(
+        color: AppColors.sunRimGold,
+        shape: BoxShape.circle,
+      ),
     );
   }
 }

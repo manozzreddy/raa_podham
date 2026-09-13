@@ -11,8 +11,8 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 /// `package:google_sign_in`, or `package:sign_in_with_apple`.
 class FirebaseAuthService {
   FirebaseAuthService([FirebaseAuth? auth, GoogleSignIn? googleSignIn])
-      : _authOverride = auth,
-        _googleSignIn = googleSignIn ?? GoogleSignIn();
+    : _authOverride = auth,
+      _googleSignIn = googleSignIn ?? GoogleSignIn();
 
   final FirebaseAuth? _authOverride;
   final GoogleSignIn _googleSignIn;
@@ -26,7 +26,8 @@ class FirebaseAuthService {
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
-  Future<String?> getIdToken() => _auth.currentUser?.getIdToken() ?? Future.value(null);
+  Future<String?> getIdToken() =>
+      _auth.currentUser?.getIdToken() ?? Future.value(null);
 
   Future<UserCredential> signInWithGoogle() async {
     final googleUser = await _googleSignIn.signIn();
@@ -50,16 +51,31 @@ class FirebaseAuthService {
     final hashedNonce = _sha256ofString(rawNonce);
 
     final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
+      scopes: [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
       nonce: hashedNonce,
     );
 
-    final oauthCredential = OAuthProvider('apple.com').credential(
-      idToken: appleCredential.identityToken,
-      rawNonce: rawNonce,
-    );
+    final oauthCredential = OAuthProvider('apple.com')
+        .credential(idToken: appleCredential.identityToken, rawNonce: rawNonce);
 
-    return _auth.signInWithCredential(oauthCredential);
+    final userCredential = await _auth.signInWithCredential(oauthCredential);
+
+    // Apple only ever sends the user's name on this very first
+    // authorization — unlike Google, Firebase's own user record has no
+    // name (or photo) from Apple at all otherwise, so this is the only
+    // chance to persist it.
+    final appleName =
+        '${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}'
+            .trim();
+    final currentName = userCredential.user?.displayName;
+    if (appleName.isNotEmpty && (currentName == null || currentName.isEmpty)) {
+      await userCredential.user?.updateDisplayName(appleName);
+    }
+
+    return userCredential;
   }
 
   Future<void> signOut() async {
@@ -68,9 +84,14 @@ class FirebaseAuthService {
 }
 
 String _generateNonce([int length = 32]) {
-  const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+  const charset =
+      '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
   final random = Random.secure();
-  return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+  return List.generate(
+    length,
+    (_) => charset[random.nextInt(charset.length)],
+  ).join();
 }
 
-String _sha256ofString(String input) => sha256.convert(utf8.encode(input)).toString();
+String _sha256ofString(String input) =>
+    sha256.convert(utf8.encode(input)).toString();

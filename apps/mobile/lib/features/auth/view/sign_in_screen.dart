@@ -53,7 +53,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [AppColors.predawnIndigo, AppColors.sunriseAmber, AppColors.sunRimGold],
+              colors: [
+                AppColors.predawnIndigo,
+                AppColors.sunriseAmber,
+                AppColors.sunRimGold,
+              ],
               stops: [0.0, 0.62, 1.0],
             ),
           ),
@@ -130,7 +134,11 @@ class _Badge extends StatelessWidget {
 }
 
 class _SignInButtons extends StatelessWidget {
-  const _SignInButtons({required this.isLoading, required this.onGoogleTap, required this.onAppleTap});
+  const _SignInButtons({
+    required this.isLoading,
+    required this.onGoogleTap,
+    required this.onAppleTap,
+  });
 
   final bool isLoading;
   final VoidCallback onGoogleTap;
@@ -180,14 +188,23 @@ class _GoogleSignInButton extends StatelessWidget {
           backgroundColor: Colors.white,
           foregroundColor: AppColors.asphaltInk,
           elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(26),
+          ),
         ),
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image(image: AssetImage('assets/icons/google_g.png'), width: 20, height: 20),
+            Image(
+              image: AssetImage('assets/icons/google_g.png'),
+              width: 20,
+              height: 20,
+            ),
             SizedBox(width: 12),
-            Text('Continue with Google', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            Text(
+              'Continue with Google',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+            ),
           ],
         ),
       ),

@@ -1,4 +1,3 @@
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'rider_position.dart';
@@ -35,17 +34,4 @@ class Rider {
   final LatLng location;
   final bool isOnline;
   final bool isSelf;
-}
-
-/// "You" for the current rider, otherwise the distance from
-/// [selfLocation] to [rider], formatted like "2.3 km".
-String formatRiderDistance(Rider rider, LatLng selfLocation) {
-  if (rider.isSelf) return 'You';
-  final meters = Geolocator.distanceBetween(
-    selfLocation.latitude,
-    selfLocation.longitude,
-    rider.location.latitude,
-    rider.location.longitude,
-  );
-  return '${(meters / 1000).toStringAsFixed(1)} km';
 }

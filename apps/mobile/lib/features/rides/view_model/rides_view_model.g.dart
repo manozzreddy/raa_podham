@@ -58,81 +58,27 @@ abstract class _$RidesViewModel extends $AsyncNotifier<List<Ride>> {
   }
 }
 
-/// The create-ride form's submit action.
-///
-/// Kept separate from [RidesViewModel] so the list's loading/error state
-/// and the form's submit loading/error state don't share one [AsyncValue].
-
-@ProviderFor(CreateRideViewModel)
-final createRideViewModelProvider = CreateRideViewModelProvider._();
-
-/// The create-ride form's submit action.
-///
-/// Kept separate from [RidesViewModel] so the list's loading/error state
-/// and the form's submit loading/error state don't share one [AsyncValue].
-final class CreateRideViewModelProvider
-    extends $AsyncNotifierProvider<CreateRideViewModel, Ride?> {
-  /// The create-ride form's submit action.
-  ///
-  /// Kept separate from [RidesViewModel] so the list's loading/error state
-  /// and the form's submit loading/error state don't share one [AsyncValue].
-  CreateRideViewModelProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'createRideViewModelProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$createRideViewModelHash();
-
-  @$internal
-  @override
-  CreateRideViewModel create() => CreateRideViewModel();
-}
-
-String _$createRideViewModelHash() =>
-    r'eafc71317c523886a39f469ef0e80754a5ede752';
-
-/// The create-ride form's submit action.
-///
-/// Kept separate from [RidesViewModel] so the list's loading/error state
-/// and the form's submit loading/error state don't share one [AsyncValue].
-
-abstract class _$CreateRideViewModel extends $AsyncNotifier<Ride?> {
-  FutureOr<Ride?> build();
-  @$mustCallSuper
-  @override
-  WhenComplete runBuild() {
-    final ref = this.ref as $Ref<AsyncValue<Ride?>, Ride?>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<AsyncValue<Ride?>, Ride?>,
-              AsyncValue<Ride?>,
-              Object?,
-              Object?
-            >;
-    return element.handleCreate(ref, build);
-  }
-}
-
-/// The join-ride form's submit action. Same reasoning as
-/// [CreateRideViewModel] — its own [AsyncValue], separate from the list.
+/// The join-ride form's submit action. Its own [AsyncValue], separate
+/// from [RidesViewModel]'s list — [CreateRideViewModel] (its own file,
+/// `create_ride_view_model.dart`) is the create-ride equivalent, though
+/// shaped differently since that form has more going on (destination
+/// search) than a single submit action.
 
 @ProviderFor(JoinRideViewModel)
 final joinRideViewModelProvider = JoinRideViewModelProvider._();
 
-/// The join-ride form's submit action. Same reasoning as
-/// [CreateRideViewModel] — its own [AsyncValue], separate from the list.
+/// The join-ride form's submit action. Its own [AsyncValue], separate
+/// from [RidesViewModel]'s list — [CreateRideViewModel] (its own file,
+/// `create_ride_view_model.dart`) is the create-ride equivalent, though
+/// shaped differently since that form has more going on (destination
+/// search) than a single submit action.
 final class JoinRideViewModelProvider
     extends $AsyncNotifierProvider<JoinRideViewModel, Ride?> {
-  /// The join-ride form's submit action. Same reasoning as
-  /// [CreateRideViewModel] — its own [AsyncValue], separate from the list.
+  /// The join-ride form's submit action. Its own [AsyncValue], separate
+  /// from [RidesViewModel]'s list — [CreateRideViewModel] (its own file,
+  /// `create_ride_view_model.dart`) is the create-ride equivalent, though
+  /// shaped differently since that form has more going on (destination
+  /// search) than a single submit action.
   JoinRideViewModelProvider._()
     : super(
         from: null,
@@ -154,8 +100,11 @@ final class JoinRideViewModelProvider
 
 String _$joinRideViewModelHash() => r'da77d07b123b147f03bbaca3102a6e0e6fd393e9';
 
-/// The join-ride form's submit action. Same reasoning as
-/// [CreateRideViewModel] — its own [AsyncValue], separate from the list.
+/// The join-ride form's submit action. Its own [AsyncValue], separate
+/// from [RidesViewModel]'s list — [CreateRideViewModel] (its own file,
+/// `create_ride_view_model.dart`) is the create-ride equivalent, though
+/// shaped differently since that form has more going on (destination
+/// search) than a single submit action.
 
 abstract class _$JoinRideViewModel extends $AsyncNotifier<Ride?> {
   FutureOr<Ride?> build();

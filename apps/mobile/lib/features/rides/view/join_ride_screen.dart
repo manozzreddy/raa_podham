@@ -32,15 +32,25 @@ class _JoinRideScreenState extends ConsumerState<JoinRideScreen> {
     ref.listen<AsyncValue<Ride?>>(joinRideViewModelProvider, (previous, next) {
       final ride = next.value;
       if (ride != null) {
-        context.go('/rides/${ride.id}/home');
+        // Home stayed on the stack under this pushed screen, so pop back
+        // to it — but its rides list was fetched before this ride
+        // existed, so it needs an explicit refresh too (same as
+        // ending/leaving a ride).
+        ref.invalidate(ridesViewModelProvider);
+        context.pop();
       }
     });
 
     final isSubmitting = state.isLoading;
-    final errorText = state.hasError ? "Couldn't join that ride: ${state.error}" : null;
+    final errorText = state.hasError
+        ? "Couldn't join that ride: ${state.error}"
+        : null;
 
     final field = isCupertino
-        ? CupertinoTextField(controller: _inviteCodeController, placeholder: 'Invite code')
+        ? CupertinoTextField(
+            controller: _inviteCodeController,
+            placeholder: 'Invite code',
+          )
         : TextField(
             controller: _inviteCodeController,
             decoration: const InputDecoration(labelText: 'Invite code'),
@@ -49,13 +59,17 @@ class _JoinRideScreenState extends ConsumerState<JoinRideScreen> {
     void submit() {
       final inviteCode = _inviteCodeController.text.trim();
       if (inviteCode.isEmpty) return;
-      ref.read(joinRideViewModelProvider.notifier).submit(inviteCode: inviteCode);
+      ref
+          .read(joinRideViewModelProvider.notifier)
+          .submit(inviteCode: inviteCode);
     }
 
     final submitButton = isCupertino
         ? CupertinoButton.filled(
             onPressed: isSubmitting ? null : submit,
-            child: isSubmitting ? const CupertinoActivityIndicator() : const Text('Join ride'),
+            child: isSubmitting
+                ? const CupertinoActivityIndicator()
+                : const Text('Join ride'),
           )
         : FilledButton(
             onPressed: isSubmitting ? null : submit,
@@ -77,7 +91,10 @@ class _JoinRideScreenState extends ConsumerState<JoinRideScreen> {
           field,
           if (errorText != null) ...[
             const SizedBox(height: 8),
-            Text(errorText, style: const TextStyle(color: CupertinoColors.destructiveRed)),
+            Text(
+              errorText,
+              style: const TextStyle(color: CupertinoColors.destructiveRed),
+            ),
           ],
           const SizedBox(height: 16),
           submitButton,
@@ -92,6 +109,9 @@ class _JoinRideScreenState extends ConsumerState<JoinRideScreen> {
       );
     }
 
-    return Scaffold(appBar: AppBar(title: const Text('Join ride')), body: content);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Join ride')),
+      body: content,
+    );
   }
 }

@@ -11,13 +11,14 @@ import 'app_text_theme.dart';
 /// [ColorScheme.fromSeed] would otherwise generate for them.
 abstract final class AppTheme {
   static ThemeData get light {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: AppColors.sunriseAmber,
-      brightness: Brightness.light,
-    ).copyWith(
-      secondary: AppColors.sunRimGold,
-      surface: AppColors.firstLightCream,
-    );
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: AppColors.sunriseAmber,
+          brightness: Brightness.light,
+        ).copyWith(
+          secondary: AppColors.sunRimGold,
+          surface: AppColors.firstLightCream,
+        );
 
     return ThemeData(
       useMaterial3: true,
@@ -31,13 +32,14 @@ abstract final class AppTheme {
   }
 
   static ThemeData get dark {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: AppColors.sunriseAmber,
-      brightness: Brightness.dark,
-    ).copyWith(
-      secondary: AppColors.sunRimGold,
-      surface: AppColors.predawnIndigo,
-    );
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: AppColors.sunriseAmber,
+          brightness: Brightness.dark,
+        ).copyWith(
+          secondary: AppColors.sunRimGold,
+          surface: AppColors.predawnIndigo,
+        );
 
     return ThemeData(
       useMaterial3: true,

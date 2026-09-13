@@ -15,27 +15,17 @@ class RidesViewModel extends _$RidesViewModel {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => ref.read(rideRepositoryProvider).myRides());
+    state = await AsyncValue.guard(
+      () => ref.read(rideRepositoryProvider).myRides(),
+    );
   }
 }
 
-/// The create-ride form's submit action.
-///
-/// Kept separate from [RidesViewModel] so the list's loading/error state
-/// and the form's submit loading/error state don't share one [AsyncValue].
-@riverpod
-class CreateRideViewModel extends _$CreateRideViewModel {
-  @override
-  Future<Ride?> build() async => null;
-
-  Future<void> submit({required String name}) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() => ref.read(rideRepositoryProvider).createRide(name: name));
-  }
-}
-
-/// The join-ride form's submit action. Same reasoning as
-/// [CreateRideViewModel] — its own [AsyncValue], separate from the list.
+/// The join-ride form's submit action. Its own [AsyncValue], separate
+/// from [RidesViewModel]'s list — [CreateRideViewModel] (its own file,
+/// `create_ride_view_model.dart`) is the create-ride equivalent, though
+/// shaped differently since that form has more going on (destination
+/// search) than a single submit action.
 @riverpod
 class JoinRideViewModel extends _$JoinRideViewModel {
   @override
@@ -43,6 +33,8 @@ class JoinRideViewModel extends _$JoinRideViewModel {
 
   Future<void> submit({required String inviteCode}) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => ref.read(rideRepositoryProvider).joinRide(inviteCode));
+    state = await AsyncValue.guard(
+      () => ref.read(rideRepositoryProvider).joinRide(inviteCode),
+    );
   }
 }

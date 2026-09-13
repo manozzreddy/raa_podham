@@ -3,38 +3,26 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
 
-/// The right-edge floating button stack: recenter-on-me above a
-/// layers/map-style toggle, matching how Google Maps treats its own
-/// button stack.
+/// The map's floating recenter-on-me button — matching Google Maps'
+/// own single my-location FAB. Invite/end/leave used to also float here,
+/// but now live in the rider sheet's own action row instead (Invite was
+/// previously offered in both places at once).
 class MapFabStack extends StatelessWidget {
   const MapFabStack({
     super.key,
     required this.isFollowingUser,
     required this.onRecenter,
-    required this.onToggleMapStyle,
   });
 
   final bool isFollowingUser;
   final VoidCallback onRecenter;
-  final VoidCallback onToggleMapStyle;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _MapFabButton(
-          icon: isCupertino ? CupertinoIcons.location_fill : Icons.my_location,
-          isAccented: isFollowingUser,
-          onPressed: onRecenter,
-        ),
-        const SizedBox(height: 8),
-        _MapFabButton(
-          icon: isCupertino ? CupertinoIcons.square_stack_3d_up : Icons.layers,
-          isAccented: false,
-          onPressed: onToggleMapStyle,
-        ),
-      ],
+    return _MapFabButton(
+      icon: isCupertino ? CupertinoIcons.location_fill : Icons.my_location,
+      isAccented: isFollowingUser,
+      onPressed: onRecenter,
     );
   }
 }
@@ -61,7 +49,9 @@ class _MapFabButton extends StatelessWidget {
         ? CupertinoTheme.of(context).textTheme.textStyle.color
         : Theme.of(context).colorScheme.onSurface;
 
-    final backgroundColor = isAccented ? AppColors.sunriseAmber : neutralBackground;
+    final backgroundColor = isAccented
+        ? AppColors.sunriseAmber
+        : neutralBackground;
     final iconColor = isAccented ? Colors.white : neutralIconColor;
 
     if (isCupertino) {
@@ -92,7 +82,9 @@ class _MapFabButton extends StatelessWidget {
     return Material(
       color: backgroundColor,
       shape: CircleBorder(
-        side: isAccented ? BorderSide.none : const BorderSide(color: AppColors.hairline),
+        side: isAccented
+            ? BorderSide.none
+            : const BorderSide(color: AppColors.hairline),
       ),
       elevation: isAccented ? 2 : 1,
       child: InkWell(
