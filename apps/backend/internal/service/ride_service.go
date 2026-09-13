@@ -24,7 +24,7 @@ func NewRideService(rides repository.RideRepository, presence repository.Presenc
 	return &RideService{rides: rides, presence: presence, profiles: profiles}
 }
 
-func (s *RideService) CreateRide(ctx context.Context, hostUID, name string) (*model.Ride, error) {
+func (s *RideService) CreateRide(ctx context.Context, hostUID, name string, destination *model.Destination) (*model.Ride, error) {
 	code, err := model.NewInviteCode()
 	if err != nil {
 		return nil, apperror.Internal(err)
@@ -32,12 +32,13 @@ func (s *RideService) CreateRide(ctx context.Context, hostUID, name string) (*mo
 
 	now := time.Now().UTC()
 	ride := &model.Ride{
-		Name:       name,
-		HostUID:    hostUID,
-		InviteCode: code,
-		Status:     model.RideStatusActive,
-		MemberUIDs: []string{hostUID},
-		CreatedAt:  now,
+		Name:        name,
+		HostUID:     hostUID,
+		InviteCode:  code,
+		Status:      model.RideStatusActive,
+		MemberUIDs:  []string{hostUID},
+		Destination: destination,
+		CreatedAt:   now,
 	}
 	host := &model.Member{
 		UID:      hostUID,

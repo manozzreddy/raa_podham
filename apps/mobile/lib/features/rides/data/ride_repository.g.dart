@@ -48,4 +48,4 @@ final class RideRepositoryProvider
   }
 }
 
-String _$rideRepositoryHash() => r'c71ef4e1a6b69f6d7b1b2fcd0c4958e85f8a3e39';
+String _$rideRepositoryHash() => r'ee6d806fce14d92362872d2f32515f194fd2cb2d';

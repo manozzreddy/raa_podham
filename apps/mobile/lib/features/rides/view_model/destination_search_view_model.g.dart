@@ -10,9 +10,9 @@ part of 'destination_search_view_model.dart';
 // ignore_for_file: type=lint, type=warning
 /// Backs the dedicated destination-search screen — scoped to just that
 /// screen's lifetime, separate from [CreateRideViewModel], since search
-/// state (query/suggestions/isSearching) has nothing to do with the
-/// ride-creation form underneath it once a destination is actually
-/// picked and this screen is popped.
+/// state (query/suggestions/isSearching/isResolving) has nothing to do
+/// with the ride-creation form underneath it once a destination is
+/// actually picked and this screen is popped.
 
 @ProviderFor(DestinationSearchViewModel)
 final destinationSearchViewModelProvider =
@@ -20,9 +20,9 @@ final destinationSearchViewModelProvider =
 
 /// Backs the dedicated destination-search screen — scoped to just that
 /// screen's lifetime, separate from [CreateRideViewModel], since search
-/// state (query/suggestions/isSearching) has nothing to do with the
-/// ride-creation form underneath it once a destination is actually
-/// picked and this screen is popped.
+/// state (query/suggestions/isSearching/isResolving) has nothing to do
+/// with the ride-creation form underneath it once a destination is
+/// actually picked and this screen is popped.
 final class DestinationSearchViewModelProvider
     extends
         $NotifierProvider<
@@ -31,9 +31,9 @@ final class DestinationSearchViewModelProvider
         > {
   /// Backs the dedicated destination-search screen — scoped to just that
   /// screen's lifetime, separate from [CreateRideViewModel], since search
-  /// state (query/suggestions/isSearching) has nothing to do with the
-  /// ride-creation form underneath it once a destination is actually
-  /// picked and this screen is popped.
+  /// state (query/suggestions/isSearching/isResolving) has nothing to do
+  /// with the ride-creation form underneath it once a destination is
+  /// actually picked and this screen is popped.
   DestinationSearchViewModelProvider._()
     : super(
         from: null,
@@ -62,13 +62,13 @@ final class DestinationSearchViewModelProvider
 }
 
 String _$destinationSearchViewModelHash() =>
-    r'a1ec8b07b3bd4fc0e4ac0fb91ef886316c6844c1';
+    r'bfa2200cdb376124d366ff54388320bf91e4dc96';
 
 /// Backs the dedicated destination-search screen — scoped to just that
 /// screen's lifetime, separate from [CreateRideViewModel], since search
-/// state (query/suggestions/isSearching) has nothing to do with the
-/// ride-creation form underneath it once a destination is actually
-/// picked and this screen is popped.
+/// state (query/suggestions/isSearching/isResolving) has nothing to do
+/// with the ride-creation form underneath it once a destination is
+/// actually picked and this screen is popped.
 
 abstract class _$DestinationSearchViewModel
     extends $Notifier<DestinationSearchUiState> {

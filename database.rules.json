@@ -3,14 +3,14 @@
     "rides": {
       "$rideId": {
         "positions": {
+          ".read": "auth != null && root.child('rides').child($rideId).child('members').child(auth.uid).exists()",
           "$uid": {
-            ".read": "auth != null",
             ".write": "auth != null && auth.uid === $uid"
           }
         },
         "members": {
+          ".read": "auth != null && root.child('rides').child($rideId).child('members').child(auth.uid).exists()",
           "$uid": {
-            ".read": "auth != null",
             ".write": "auth != null && auth.uid === $uid"
           }
         }

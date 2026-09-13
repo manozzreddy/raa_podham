@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:flutter/foundation.dart';
 
 import 'api_client.dart';
 import 'providers.dart';
@@ -85,6 +86,11 @@ class GeocodingRepository {
       '/places/autocomplete',
       queryParameters: {'input': query},
     );
+
+    if (kDebugMode) {
+      print('API REQUEST RESPONSE: ${response.data}');
+    }
+
     final predictions = response.data?['predictions'] as List<dynamic>? ?? [];
     return predictions
         .cast<Map<String, dynamic>>()

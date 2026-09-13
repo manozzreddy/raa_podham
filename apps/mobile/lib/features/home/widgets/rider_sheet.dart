@@ -24,6 +24,7 @@ class RiderSheet extends StatelessWidget {
   const RiderSheet({
     super.key,
     required this.rideName,
+    this.destinationName,
     required this.riders,
     required this.isHost,
     required this.sheetExtent,
@@ -37,6 +38,9 @@ class RiderSheet extends StatelessWidget {
   });
 
   final String rideName;
+
+  /// The ride's destination, if one was set when it was created.
+  final String? destinationName;
   final List<RiderVm> riders;
   final bool isHost;
   final ValueListenable<double> sheetExtent;
@@ -67,7 +71,11 @@ class RiderSheet extends StatelessWidget {
                 const SizedBox(height: 8),
                 const SheetDragHandle(),
                 const SizedBox(height: 12),
-                _HeaderRow(riderCount: riders.length, rideName: rideName),
+                _HeaderRow(
+                  riderCount: riders.length,
+                  rideName: rideName,
+                  destinationName: destinationName,
+                ),
               ],
             ),
           ),
@@ -131,22 +139,31 @@ class RiderSheet extends StatelessWidget {
 }
 
 class _HeaderRow extends StatelessWidget {
-  const _HeaderRow({required this.riderCount, required this.rideName});
+  const _HeaderRow({
+    required this.riderCount,
+    required this.rideName,
+    this.destinationName,
+  });
 
   final int riderCount;
   final String rideName;
+  final String? destinationName;
 
   @override
   Widget build(BuildContext context) {
     final nameStyle = isCupertino
-        ? CupertinoTheme.of(context).textTheme.navTitleTextStyle
-        : Theme.of(context).textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w700);
+        ? CupertinoTheme.of(
+            context,
+          ).textTheme.navTitleTextStyle.copyWith(fontSize: 20)
+        : Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700);
     final countStyle = isCupertino
         ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
         : Theme.of(context).textTheme.bodyMedium;
     final countColor = countStyle?.color?.withValues(alpha: 0.7);
     final countLabel = riderCount == 1 ? '1 rider' : '$riderCount riders';
+    final destination = destinationName;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -159,7 +176,31 @@ class _HeaderRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: nameStyle,
           ),
-          const SizedBox(height: 2),
+          if (destination != null) ...[
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                Icon(
+                  isCupertino ? CupertinoIcons.location_solid : Icons.place,
+                  size: 14,
+                  color: AppColors.sunriseAmber,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    destination,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: countStyle?.copyWith(
+                      color: countColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
           Text(countLabel, style: countStyle?.copyWith(color: countColor)),
         ],
       ),

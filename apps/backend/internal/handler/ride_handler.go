@@ -12,6 +12,7 @@ import (
 	"github.com/dynamicarraytech/raa-podham/backend/internal/apperror"
 	"github.com/dynamicarraytech/raa-podham/backend/internal/dto"
 	"github.com/dynamicarraytech/raa-podham/backend/internal/middleware"
+	"github.com/dynamicarraytech/raa-podham/backend/internal/model"
 	"github.com/dynamicarraytech/raa-podham/backend/internal/service"
 )
 
@@ -36,7 +37,16 @@ func (h *RideHandler) CreateRide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ride, err := h.rides.CreateRide(r.Context(), uid, req.Name)
+	var destination *model.Destination
+	if req.Destination != nil {
+		destination = &model.Destination{
+			Name: req.Destination.Name,
+			Lat:  req.Destination.Lat,
+			Lng:  req.Destination.Lng,
+		}
+	}
+
+	ride, err := h.rides.CreateRide(r.Context(), uid, req.Name, destination)
 	if err != nil {
 		respondError(w, err)
 		return

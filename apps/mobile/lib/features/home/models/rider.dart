@@ -10,6 +10,7 @@ class Rider {
   const Rider({
     required this.riderId,
     required this.displayName,
+    this.photoUrl,
     required this.location,
     required this.isOnline,
     required this.isSelf,
@@ -23,6 +24,7 @@ class Rider {
     return Rider(
       riderId: position.riderId,
       displayName: profile?.displayName ?? 'Rider',
+      photoUrl: profile?.photoUrl,
       location: position.location,
       isOnline: position.isOnline,
       isSelf: position.riderId == currentUserId,
@@ -31,6 +33,7 @@ class Rider {
 
   final String riderId;
   final String displayName;
+  final String? photoUrl;
   final LatLng location;
   final bool isOnline;
   final bool isSelf;

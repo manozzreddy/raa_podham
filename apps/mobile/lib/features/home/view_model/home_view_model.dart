@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,6 +11,7 @@ import '../../../services/providers.dart';
 import '../../rides/data/ride_repository.dart';
 import '../../rides/models/ride.dart';
 import '../data/device_location.dart';
+import '../data/position_repository.dart';
 import '../data/riders_for_ride.dart';
 import '../models/rider.dart';
 
@@ -26,9 +28,11 @@ class HomeUiState {
     required this.rideName,
     required this.isHost,
     required this.riders,
+    required this.destination,
     required this.autoFitBounds,
     required this.selfLocation,
     required this.isFollowingUser,
+    required this.isLocationUnavailable,
   });
 
   final String rideId;
@@ -37,6 +41,9 @@ class HomeUiState {
 
   /// Sorted by distance from self, "You" first.
   final List<RiderVm> riders;
+
+  /// The ride's destination pin, if one was set when it was created.
+  final RideDestination? destination;
 
   /// Bounds around every rider's last known position, for the map's
   /// initial camera fit. Null until at least one rider's position has
@@ -49,6 +56,12 @@ class HomeUiState {
   /// they stay here rather than moving into the View.
   final LatLng selfLocation;
   final bool isFollowingUser;
+
+  /// True when this device's own location can't currently be reported —
+  /// permission denied or the location-services toggle off — meaning
+  /// this rider is invisible to the rest of the group right now. The
+  /// View shows a banner prompting them to fix it when this is true.
+  final bool isLocationUnavailable;
 }
 
 /// A group member ready for the rider sheet: no coordinates (the map reads
@@ -88,10 +101,14 @@ class RiderVm {
 @riverpod
 class HomeViewModel extends _$HomeViewModel {
   bool _hasStartedLocationResolution = false;
+  bool _hasStartedPositionReporting = false;
   bool _hasResolvedSelfLocation = false;
   LatLng _selfLocation = fallbackSelfLocation;
   bool _isFollowingUser = true;
+  bool _isLocationUnavailable = false;
   List<Rider> _lastRiders = const [];
+  StreamSubscription<Position>? _positionReportSubscription;
+  StreamSubscription<bool>? _locationServiceSubscription;
   late Ride _ride;
 
   @override
@@ -102,11 +119,82 @@ class HomeViewModel extends _$HomeViewModel {
       _hasStartedLocationResolution = true;
       unawaited(_resolveInitialLocation());
     }
+    if (!_hasStartedPositionReporting) {
+      _hasStartedPositionReporting = true;
+      _startReportingPosition();
+      unawaited(_checkInitialLocationAvailability());
+      _locationServiceSubscription = watchLocationServicesEnabled().listen((
+        enabled,
+      ) {
+        _isLocationUnavailable = !enabled;
+        _publish();
+      });
+      // Only stops the device's own streams on dispose — the RTDB entry
+      // itself is left alone here, since disposal (e.g. navigating away
+      // momentarily) isn't the same as actually leaving the ride.
+      ref.onDispose(() {
+        _positionReportSubscription?.cancel();
+        _locationServiceSubscription?.cancel();
+      });
+    }
 
     final riders = await ref.watch(ridersForRideProvider(ride.id).future);
     _lastRiders = riders;
     return _currentState(riders);
   }
+
+  void _startReportingPosition() {
+    final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
+    if (uid == null) return;
+    final positions = ref.read(positionRepositoryProvider);
+    debugPrint('position stream started for ride ${_ride.id}, uid $uid');
+    _positionReportSubscription = watchCurrentPosition().listen(
+      (position) {
+        debugPrint(
+          'reportPosition: ride ${_ride.id} uid $uid '
+          '(${position.latitude}, ${position.longitude})',
+        );
+        // Each emission fires its own write; a rejected/failed one must
+        // not take down this subscription (an uncaught Future error here
+        // would otherwise propagate to the zone) or silently vanish — a
+        // rider whose writes are failing shows up as "never has a
+        // marker," with nothing else pointing at why, unless logged.
+        unawaited(
+          positions
+              .reportPosition(
+                rideId: _ride.id,
+                uid: uid,
+                lat: position.latitude,
+                lng: position.longitude,
+              )
+              .catchError((Object error, StackTrace stackTrace) {
+                debugPrint(
+                  'reportPosition failed for ride ${_ride.id}: $error',
+                );
+              }),
+        );
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        // watchCurrentPosition's own try/catch swallows setup failures
+        // (permission denied, services off) by design — but that means
+        // a genuinely broken stream (one that emits an error instead of
+        // just completing) would otherwise vanish here too.
+        debugPrint('position stream errored for ride ${_ride.id}: $error');
+      },
+    );
+  }
+
+  Future<void> _checkInitialLocationAvailability() async {
+    final available = await isLocationAvailable();
+    _isLocationUnavailable = !available;
+    _publish();
+  }
+
+  /// Opens the device's location settings — the rider-invisible banner's
+  /// call to action. [watchLocationServicesEnabled] picks up the change
+  /// live if they actually turn it on, no restart or manual re-check
+  /// needed.
+  Future<void> openLocationSettings() => Geolocator.openLocationSettings();
 
   /// Re-acquires the device's location, recenters on it, and marks the
   /// map as following the user again.
@@ -148,6 +236,16 @@ class HomeViewModel extends _$HomeViewModel {
     } else {
       await repository.leaveRide(_ride.id);
     }
+    // Ending already wipes the whole rides/{id} RTDB subtree server-side
+    // (RTDBPresenceRepository.ClearRide), so this is only load-bearing for
+    // the leave case — but harmless (and one fewer thing to keep in sync)
+    // to always do it here regardless of which branch ran.
+    final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
+    if (uid != null) {
+      await ref
+          .read(positionRepositoryProvider)
+          .clearPosition(rideId: _ride.id, uid: uid);
+    }
   }
 
   bool get _isHost =>
@@ -181,18 +279,29 @@ class HomeViewModel extends _$HomeViewModel {
 
   HomeUiState _currentState(List<Rider> riders) {
     final sortedRiders = _sortedByDistance(riders);
+    final destination = _ride.destination;
+    final boundsPoints = [
+      ...riders.map((rider) => rider.location),
+      if (destination != null) LatLng(destination.lat, destination.lng),
+    ];
     return HomeUiState(
       rideId: _ride.id,
       rideName: _ride.name,
       isHost: _isHost,
       riders: sortedRiders.map(_toRiderVm).toList(growable: false),
-      autoFitBounds: riders.isEmpty
+      destination: destination,
+      // A single point makes a zero-area "bounds" — flutter_map's camera
+      // fit computes an invalid (NaN/Infinity) zoom trying to fit one,
+      // which then corrupts the shared MapController's state for the
+      // rest of the session. Fitting only ever makes sense for 2+ points
+      // anyway; with fewer, initialCenter already puts the camera
+      // somewhere reasonable, so there's nothing lost by skipping it.
+      autoFitBounds: boundsPoints.length < 2
           ? null
-          : LatLngBounds.fromPoints(
-              riders.map((rider) => rider.location).toList(),
-            ),
+          : LatLngBounds.fromPoints(boundsPoints),
       selfLocation: _selfLocation,
       isFollowingUser: _isFollowingUser,
+      isLocationUnavailable: _isLocationUnavailable,
     );
   }
 

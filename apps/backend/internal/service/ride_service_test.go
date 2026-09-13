@@ -167,7 +167,7 @@ func TestRideService_CreateRide(t *testing.T) {
 	presence := newFakePresenceRepository()
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Sunday Sunrise Ride")
+	ride, err := svc.CreateRide(context.Background(), "host-1", "Sunday Sunrise Ride", nil)
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}
@@ -182,6 +182,24 @@ func TestRideService_CreateRide(t *testing.T) {
 	}
 	if !presence.present[ride.ID]["host-1"] {
 		t.Errorf("expected host to be marked present in presence repo")
+	}
+}
+
+func TestRideService_CreateRide_WithDestination(t *testing.T) {
+	rides := newFakeRideRepository()
+	presence := newFakePresenceRepository()
+	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+
+	destination := &model.Destination{Name: "Cubbon Park", Lat: 12.9716, Lng: 77.5946}
+	ride, err := svc.CreateRide(context.Background(), "host-1", "Sunday Sunrise Ride", destination)
+	if err != nil {
+		t.Fatalf("CreateRide returned error: %v", err)
+	}
+	if ride.Destination == nil {
+		t.Fatalf("Destination = nil, want %+v", destination)
+	}
+	if *ride.Destination != *destination {
+		t.Errorf("Destination = %+v, want %+v", ride.Destination, destination)
 	}
 }
 
@@ -256,7 +274,7 @@ func TestRideService_LeaveRide_HostEndsRide(t *testing.T) {
 	presence := newFakePresenceRepository()
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Test Ride")
+	ride, err := svc.CreateRide(context.Background(), "host-1", "Test Ride", nil)
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}
@@ -282,7 +300,7 @@ func TestRideService_EndRide_NonHostForbidden(t *testing.T) {
 	presence := newFakePresenceRepository()
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Test Ride")
+	ride, err := svc.CreateRide(context.Background(), "host-1", "Test Ride", nil)
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}

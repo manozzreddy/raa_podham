@@ -7,12 +7,14 @@ import 'firebase_auth_service.dart';
 /// builds — override per-build with `--dart-define=RAA_PODHAM_API_BASE_URL=...`.
 const String _defaultApiBaseUrl = 'https://api.raapodham.example.com';
 
-/// Debug builds always hit the locally-run backend instead — on a real
-/// Android device (not an emulator) this needs `adb reverse tcp:8080
-/// tcp:8080` first, so the device's own "localhost" reaches the dev
-/// machine. (An Android emulator would use 10.0.2.2 instead; iOS
-/// Simulator can use localhost directly.)
-const String _localApiBaseUrl = 'http://localhost:8080';
+/// Debug builds always hit the locally-run backend instead. Set to the
+/// dev machine's LAN IP (not "localhost") so a physical device on the
+/// same Wi-Fi can reach it — "localhost" from the device's own
+/// perspective means the device itself, not this machine. The backend
+/// already binds to all interfaces (see internal/config's HOST var), so
+/// nothing on that side needs to change if this IP does; re-check it
+/// with `ipconfig` if the dev machine reconnects to a different network.
+const String _localApiBaseUrl = 'http://192.168.1.100:8080';
 
 String get _resolvedApiBaseUrl {
   if (kDebugMode) return _localApiBaseUrl;
@@ -32,28 +34,12 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          if (kDebugMode)
+          if (kDebugMode) {
             print('API REQUEST: ${options.method} ${options.uri}');
+          }
           final token = await _authService.getIdToken();
           if (token != null) {
             options.headers['Authorization'] = 'Bearer $token';
-            // TEMPORARY debug instrumentation — remove before committing.
-            // Android truncates a single print() at ~1024 chars, which
-            // silently corrupts anything longer (like this token) — so
-            // this prints it in small, individually-tagged chunks
-            // instead of one long line.
-            if (kDebugMode) {
-              const chunkSize = 200;
-              for (var i = 0; i < token.length; i += chunkSize) {
-                final end = (i + chunkSize < token.length)
-                    ? i + chunkSize
-                    : token.length;
-                print(
-                  'DEBUG_BEARER_TOKEN_CHUNK[$i]: ${token.substring(i, end)}',
-                );
-              }
-              print('DEBUG_BEARER_TOKEN_END length=${token.length}');
-            }
           }
           handler.next(options);
         },

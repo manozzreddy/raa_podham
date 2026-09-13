@@ -10,6 +10,14 @@ import (
 )
 
 type Config struct {
+	// Host is the address the HTTP server binds to. Empty (the default)
+	// means "all interfaces" — Go's http.Server treats an Addr with no
+	// host part (e.g. ":8080") the same way, so this is already the
+	// as-shipped behavior, just made explicit and overridable via
+	// HOST instead of being an implicit net/http detail. Set it to
+	// "127.0.0.1" to restrict the server back to loopback-only, e.g.
+	// for a machine you deliberately don't want reachable from the LAN.
+	Host               string
 	Port               string
 	FirebaseProjectID  string
 	RTDBURL            string
@@ -27,6 +35,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
+		Host:               getEnv("HOST", ""),
 		Port:               getEnv("PORT", "8080"),
 		FirebaseProjectID:  os.Getenv("FIREBASE_PROJECT_ID"),
 		RTDBURL:            os.Getenv("RTDB_URL"),

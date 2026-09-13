@@ -18,10 +18,12 @@ class HomeSheetContainer extends StatelessWidget {
         ? CupertinoTheme.of(context).scaffoldBackgroundColor
         : Theme.of(context).colorScheme.surface;
 
+    const shape = BorderRadius.vertical(top: Radius.circular(20));
+
     return Container(
       decoration: BoxDecoration(
         color: sheetBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: shape,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -30,7 +32,17 @@ class HomeSheetContainer extends StatelessWidget {
           ),
         ],
       ),
-      child: child,
+      // The outer Container above is a plain DecoratedBox — Material
+      // widgets like RiderSheet's ListTile rows paint their background
+      // and ink splashes on the nearest Material ancestor, which a
+      // DecoratedBox doesn't provide. This inner transparent Material
+      // supplies that surface without adding a second background/shadow
+      // of its own; ClipRRect keeps ink splashes from spilling past the
+      // same rounded corners the outer decoration already draws.
+      child: ClipRRect(
+        borderRadius: shape,
+        child: Material(type: MaterialType.transparency, child: child),
+      ),
     );
   }
 }

@@ -56,7 +56,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	slog.Info("config loaded", "env", cfg.Env, "port", cfg.Port, "firebaseProjectId", cfg.FirebaseProjectID, "rtdbUrl", cfg.RTDBURL)
+	slog.Info("config loaded", "env", cfg.Env, "host", cfg.Host, "port", cfg.Port, "firebaseProjectId", cfg.FirebaseProjectID, "rtdbUrl", cfg.RTDBURL)
 
 	var app *firebase.App
 	if err := step("firebase app", func() error {
@@ -117,7 +117,7 @@ func run() error {
 	// thing worth seeing in the log when the API comes up locally.
 	slog.Info("home page API", "url", fmt.Sprintf("http://localhost:%s/users/me/rides", cfg.Port))
 
-	srv := server.New(":"+cfg.Port, router)
+	srv := server.New(cfg.Host+":"+cfg.Port, router)
 
 	return srv.Run()
 }

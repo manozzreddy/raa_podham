@@ -26,6 +26,7 @@ class MembershipRepository {
                   riderId: doc.id,
                   displayName:
                       (doc.data()['displayName'] as String?) ?? 'Rider',
+                  photoUrl: doc.data()['photoUrl'] as String?,
                 ),
               )
               .toList(growable: false),

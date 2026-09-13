@@ -1,7 +1,12 @@
-.PHONY: run test build lint
+.PHONY: run watch test build lint
 
 run:
 	go run ./cmd/api
+
+# Rebuilds and restarts the API on every saved .go file change, per
+# .air.toml. Requires air: go install github.com/air-verse/air@latest
+watch:
+	air
 
 test:
 	go test ./...

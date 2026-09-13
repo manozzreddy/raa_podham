@@ -6,6 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:raa_podham/features/rides/data/ride_repository.dart';
+import 'package:raa_podham/features/rides/models/ride.dart';
 import 'package:raa_podham/features/rides/view_model/create_ride_view_model.dart';
 import 'package:raa_podham/services/firebase_auth_service.dart';
 import 'package:raa_podham/services/geocoding_repository.dart';
@@ -31,6 +33,44 @@ class _FakeFirebaseAuthService implements FirebaseAuthService {
   Future<UserCredential> signInWithApple() => throw UnimplementedError();
 }
 
+/// Stands in for the real backend call (POST /rides) — `RideRepository`
+/// now hits the network for real, and this test cares about
+/// `CreateRideViewModel`'s own state handling, not the network.
+class _FakeRideRepository implements RideRepository {
+  @override
+  Future<Ride> createRide({
+    required String name,
+    DestinationSuggestion? destination,
+  }) async {
+    return Ride(
+      id: 'fake-ride-1',
+      name: name,
+      inviteCode: 'FAKE01',
+      hostId: 'fake-host-uid',
+      status: RideStatus.active,
+      destination: destination == null
+          ? null
+          : RideDestination(
+              name: destination.displayName,
+              lat: destination.lat,
+              lng: destination.lng,
+            ),
+    );
+  }
+
+  @override
+  Future<Ride> joinRide(String inviteCode) => throw UnimplementedError();
+
+  @override
+  Future<void> leaveRide(String rideId) => throw UnimplementedError();
+
+  @override
+  Future<void> endRide(String rideId) => throw UnimplementedError();
+
+  @override
+  Future<List<Ride>> myRides() => throw UnimplementedError();
+}
+
 const _destination = DestinationSuggestion(
   displayName: 'Cubbon Park',
   secondaryText: 'Bengaluru, India',
@@ -47,6 +87,7 @@ void main() {
         firebaseAuthServiceProvider.overrideWithValue(
           _FakeFirebaseAuthService(),
         ),
+        rideRepositoryProvider.overrideWithValue(_FakeRideRepository()),
       ],
     );
     // This provider is (correctly) autoDispose in production — container

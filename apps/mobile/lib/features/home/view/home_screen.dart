@@ -17,6 +17,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/map_fab_stack.dart';
 import '../widgets/map_top_icons.dart';
 import '../widgets/no_ride_sheet.dart';
+import '../widgets/rider_avatar_chip.dart';
 import '../widgets/rider_sheet.dart';
 
 const double _sheetInitialSize = 0.24;
@@ -138,13 +139,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       final bounds = nextState.autoFitBounds;
       if (bounds != null && _autoFitAppliedForRideId != nextState.rideId) {
-        _autoFitAppliedForRideId = nextState.rideId;
-        _mapController.fitCamera(
-          CameraFit.bounds(
-            bounds: bounds,
-            padding: const EdgeInsets.all(_autoFitPadding),
-          ),
-        );
+        try {
+          _mapController.fitCamera(
+            CameraFit.bounds(
+              bounds: bounds,
+              padding: const EdgeInsets.all(_autoFitPadding),
+            ),
+          );
+          // Only recorded on success: the destination (unlike riders,
+          // which need a network round trip) is known the instant this
+          // state first emits, which can race ahead of FlutterMap's own
+          // first frame — same underlying cause as _followSelfLocation's
+          // try/catch below. Leaving this unset on failure means the
+          // very next state emission retries the fit instead of skipping
+          // it for the rest of the ride.
+          _autoFitAppliedForRideId = nextState.rideId;
+        } on Exception {
+          // See above — safe to drop, the next update retries it.
+        }
       }
     });
 
@@ -157,12 +169,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           mapController: _mapController,
           rideId: state.rideId,
           initialCenter: state.selfLocation,
+          destination: state.destination,
           onUserGesture: viewModel.onMapPanned,
         ),
         onProfileTap: () => context.push('/settings'),
         selfPhotoUrl: ref.watch(authStateProvider).value?.photoURL,
         scaffoldKey: _scaffoldKey,
         maxSheetExtent: maxSheetExtent,
+        banner: state.isLocationUnavailable
+            ? _LocationDisabledBanner(onTurnOnTap: viewModel.openLocationSettings)
+            : null,
         fabStack: MapFabStack(
           isFollowingUser: state.isFollowingUser,
           onRecenter: viewModel.recenter,
@@ -170,6 +186,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sheetController: _sheetController,
         sheetBuilder: (context, scrollController) => RiderSheet(
           rideName: state.rideName,
+          destinationName: state.destination?.name,
           riders: state.riders,
           isHost: state.isHost,
           sheetExtent: _sheetExtent,
@@ -311,6 +328,58 @@ class _ErrorScaffold extends StatelessWidget {
   }
 }
 
+/// Shown when this device's own location can't be reported right now
+/// (permission denied or the location-services toggle off) — otherwise
+/// a rider just silently never shows up to the rest of the group, with
+/// nothing telling them why (see HomeUiState.isLocationUnavailable).
+class _LocationDisabledBanner extends StatelessWidget {
+  const _LocationDisabledBanner({required this.onTurnOnTap});
+
+  final VoidCallback onTurnOnTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = isCupertino
+        ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
+        : Theme.of(context).textTheme.bodySmall;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.predawnIndigo,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isCupertino ? CupertinoIcons.location_slash : Icons.location_off,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "Your location is off. Others in this ride cannot see your location.",
+              style: textStyle?.copyWith(color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onTurnOnTap,
+            child: Text(
+              'Turn on',
+              style: textStyle?.copyWith(
+                color: AppColors.sunRimGold,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The shared shell for both home states: full-bleed map, floating menu
 /// and profile icons up top, right-edge FAB stack, and a draggable sheet
 /// — only [map], [fabStack] and the sheet's own content ever differ
@@ -325,11 +394,16 @@ class _MapHomeScaffold extends StatelessWidget {
     required this.sheetController,
     required this.maxSheetExtent,
     required this.sheetBuilder,
+    this.banner,
   });
 
   final Widget map;
   final VoidCallback onProfileTap;
   final String? selfPhotoUrl;
+
+  /// Shown just below [MapTopIcons], e.g. [_LocationDisabledBanner] —
+  /// null (the common case) renders nothing extra.
+  final Widget? banner;
 
   /// Only actually used on Material, to open [AppDrawer] via
   /// [ScaffoldState.openDrawer] — Cupertino opens the same content
@@ -353,12 +427,20 @@ class _MapHomeScaffold extends StatelessWidget {
           right: 16,
           child: SafeArea(
             bottom: false,
-            child: MapTopIcons(
-              onProfileTap: onProfileTap,
-              selfPhotoUrl: selfPhotoUrl,
-              onMenuTap: isCupertino
-                  ? () => openCupertinoAppMenu(context)
-                  : () => scaffoldKey.currentState?.openDrawer(),
+            child: Column(
+              children: [
+                MapTopIcons(
+                  onProfileTap: onProfileTap,
+                  selfPhotoUrl: selfPhotoUrl,
+                  onMenuTap: isCupertino
+                      ? () => openCupertinoAppMenu(context)
+                      : () => scaffoldKey.currentState?.openDrawer(),
+                ),
+                if (banner != null) ...[
+                  const SizedBox(height: 8),
+                  banner!,
+                ],
+              ],
             ),
           ),
         ),
@@ -397,18 +479,24 @@ class _RideMap extends ConsumerWidget {
     required this.mapController,
     required this.rideId,
     required this.initialCenter,
+    required this.destination,
     required this.onUserGesture,
   });
 
   final MapController mapController;
   final String rideId;
   final LatLng initialCenter;
+  final RideDestination? destination;
   final VoidCallback onUserGesture;
+
+  static const double _riderDiameter = 40;
+  static const double _destinationSize = 36;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final riders =
         ref.watch(ridersForRideProvider(rideId)).value ?? const <Rider>[];
+    final destinationPin = destination;
 
     return FlutterMap(
       mapController: mapController,
@@ -424,7 +512,12 @@ class _RideMap extends ConsumerWidget {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.dynamicarraytech.raa_podham',
         ),
-        MarkerLayer(markers: riders.map(_buildMarker).toList(growable: false)),
+        MarkerLayer(
+          markers: [
+            if (destinationPin != null) _buildDestinationMarker(destinationPin),
+            ...riders.map(_buildMarker),
+          ],
+        ),
         const RichAttributionWidget(
           attributions: [TextSourceAttribution('OpenStreetMap contributors')],
         ),
@@ -433,18 +526,40 @@ class _RideMap extends ConsumerWidget {
   }
 
   Marker _buildMarker(Rider rider) {
-    final diameter = rider.isSelf ? 22.0 : 16.0;
     return Marker(
       point: rider.location,
-      width: diameter,
-      height: diameter,
-      child: Container(
-        decoration: BoxDecoration(
-          color: rider.isSelf ? AppColors.sunriseAmber : AppColors.sunRimGold,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
-        ),
+      width: _riderDiameter,
+      height: _riderDiameter,
+      child: RiderAvatarCircle(
+        label: rider.displayName,
+        photoUrl: rider.photoUrl,
+        diameter: _riderDiameter,
+        background: rider.isSelf
+            ? AppColors.sunriseAmber
+            : AppColors.predawnIndigo,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+      ),
+    );
+  }
+
+  /// A distinct pin (not an avatar) so the ride's destination never reads
+  /// as just another rider dot — same shape/color language as
+  /// [DestinationSearchScreen]'s own place-row icon.
+  Marker _buildDestinationMarker(RideDestination destination) {
+    return Marker(
+      point: LatLng(destination.lat, destination.lng),
+      width: _destinationSize,
+      height: _destinationSize,
+      // Anchored so the pin's tip (bottom-center), not its visual center,
+      // points at the actual coordinate — otherwise it looks like it's
+      // floating above the ride's actual meeting point.
+      alignment: Alignment.topCenter,
+      child: Icon(
+        isCupertino ? CupertinoIcons.location_solid : Icons.place,
+        color: AppColors.predawnIndigo,
+        size: _destinationSize,
+        shadows: const [Shadow(color: Colors.black26, blurRadius: 4)],
       ),
     );
   }

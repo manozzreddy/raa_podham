@@ -81,7 +81,7 @@ class DestinationSearchViewModel extends _$DestinationSearchViewModel {
       // and must not overwrite what's now on screen.
       if (state.query != query) return;
       state = state.copyWith(suggestions: results, isSearching: false);
-    } catch (_) {
+    } catch (error) {
       if (state.query != query) return;
       state = state.copyWith(isSearching: false, suggestions: const []);
     }

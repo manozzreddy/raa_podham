@@ -3,5 +3,8 @@
 /backend
 /api
 
+# air's hot-reload build output (see .air.toml)
+/tmp
+
 # Editor/OS cruft
 .DS_Store

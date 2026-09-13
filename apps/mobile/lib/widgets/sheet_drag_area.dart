@@ -36,7 +36,19 @@ class SheetDragArea extends StatelessWidget {
         if (!controller.isAttached) return;
         final screenHeight = MediaQuery.sizeOf(context).height;
         final newExtent = controller.size - details.delta.dy / screenHeight;
-        controller.jumpTo(newExtent.clamp(minExtent, maxExtent));
+        try {
+          controller.jumpTo(newExtent.clamp(minExtent, maxExtent));
+        } on AssertionError {
+          // Same underlying cause as the isAttached check above, just a
+          // narrower window that check can't catch: isAttached only means
+          // "attached to at least one" scrollable, but for one frame
+          // during a RiderSheet/NoRideSheet swap the controller can be
+          // attached to *both* the outgoing and incoming sheet at once —
+          // jumpTo()'s own internal ScrollPosition lookup asserts there's
+          // exactly one. Dropping this single drag-update is fine: the
+          // next one (or the sheet's own snap) picks up from wherever the
+          // now-single remaining sheet actually settled.
+        }
       },
       child: child,
     );
