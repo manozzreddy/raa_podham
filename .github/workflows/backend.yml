@@ -1,11 +1,13 @@
 name: Backend CI/CD
 
-# Only runs once code actually lands on main (a merged PR, or a direct
-# push there) — not on every feature-branch push. workflow_dispatch is
-# just for a manual re-run of the same thing from the Actions tab.
+# Only runs for a commit landing directly on one of these branches —
+# add more here as needed. workflow_dispatch is just for a manual re-run
+# of the same thing from the Actions tab.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feat/project-initial-setup
     paths:
       - 'apps/backend/**'
       - '.github/workflows/backend.yml'
