@@ -99,15 +99,20 @@ func run() error {
 	presenceRepo := repository.NewRTDBPresenceRepository(rtdbClient)
 	profileRepo := repository.NewFirestoreProfileRepository(firestoreClient)
 	placesRepo := repository.NewGooglePlacesRepository(cfg.GooglePlacesAPIKey, repository.GooglePlacesBaseURL)
+	// Same key as Places — both were enabled on it together (see
+	// .env.example); it's just named for the first of the two.
+	routesRepo := repository.NewGoogleRoutesRepository(cfg.GooglePlacesAPIKey, repository.GoogleRoutesBaseURL)
 
 	rideService := service.NewRideService(rideRepo, presenceRepo, profileRepo)
 	userService := service.NewUserService(rideRepo)
 	placesService := service.NewPlacesService(placesRepo)
+	routesService := service.NewRoutesService(routesRepo)
 
 	handlers := server.Handlers{
 		Ride:   handler.NewRideHandler(rideService),
 		User:   handler.NewUserHandler(userService),
 		Places: handler.NewPlacesHandler(placesService),
+		Routes: handler.NewRoutesHandler(routesService),
 	}
 
 	router := server.NewRouter(handlers, authClient)

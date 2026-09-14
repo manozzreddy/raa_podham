@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -7,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../services/providers.dart';
 import '../../../theme/theme.dart';
+import '../../../widgets/app_error_screen.dart';
 import '../../rides/models/ride.dart';
 import '../../rides/view_model/rides_view_model.dart';
 import '../data/riders_for_ride.dart';
@@ -14,10 +17,12 @@ import '../models/rider.dart';
 import '../view_model/home_view_model.dart';
 import '../view_model/no_active_ride_view_model.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/info_icon_button.dart';
 import '../widgets/map_fab_stack.dart';
 import '../widgets/map_top_icons.dart';
 import '../widgets/no_ride_sheet.dart';
 import '../widgets/rider_avatar_chip.dart';
+import '../widgets/rider_info_sheet.dart';
 import '../widgets/rider_sheet.dart';
 
 const double _sheetInitialSize = 0.24;
@@ -102,7 +107,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return ridesAsync.when(
       loading: () => const _LoadingScaffold(),
-      error: (error, stackTrace) => _ErrorScaffold(error: error),
+      error: (error, stackTrace) => AppErrorScreen(
+        error: error,
+        stackTrace: stackTrace,
+        message: "Couldn't load your rides.",
+        onRetry: () => ref.invalidate(ridesViewModelProvider),
+      ),
       data: (rides) {
         final activeRide = _findActiveRide(rides);
         if (activeRide != null) return _buildActiveRideHome(activeRide);
@@ -160,16 +170,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // Separate from the listener above: opening the Rider Info modal
+    // needs a BuildContext for showModalBottomSheet, which the ViewModel
+    // must never hold — so it only sets infoRiderUid, and this is what
+    // actually reacts to that by presenting the modal.
+    ref.listen<AsyncValue<HomeUiState>>(provider, (previous, next) {
+      final infoRiderUid = next.value?.infoRiderUid;
+      if (infoRiderUid != null &&
+          previous?.value?.infoRiderUid != infoRiderUid) {
+        unawaited(_showRiderInfoModal(context, viewModel, infoRiderUid));
+      }
+    });
+
     return stateAsync.when(
       loading: () => const _LoadingScaffold(),
-      error: (error, stackTrace) =>
-          _ErrorScaffold(error: error, message: "Couldn't load this ride"),
+      error: (error, stackTrace) => AppErrorScreen(
+        error: error,
+        stackTrace: stackTrace,
+        message: "Couldn't load this ride.",
+        onRetry: () => ref.invalidate(provider),
+      ),
       data: (state) => _MapHomeScaffold(
         map: _RideMap(
           mapController: _mapController,
           rideId: state.rideId,
           initialCenter: state.selfLocation,
           destination: state.destination,
+          routePolyline: state.routePolyline,
+          selectedRiderUid: state.selectedRiderUid,
+          onSelectRider: viewModel.selectRider,
+          onShowInfo: viewModel.showRiderInfo,
           onUserGesture: viewModel.onMapPanned,
         ),
         onProfileTap: () => context.push('/settings'),
@@ -187,6 +217,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sheetBuilder: (context, scrollController) => RiderSheet(
           rideName: state.rideName,
           destinationName: state.destination?.name,
+          routeSummary: state.routeSummary,
           riders: state.riders,
           isHost: state.isHost,
           sheetExtent: _sheetExtent,
@@ -196,7 +227,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           scrollController: scrollController,
           onInviteMore: viewModel.inviteMore,
           onCta: () => _handleEndOrLeaveRide(viewModel),
-          onRiderTap: (riderId) => _focusOnRider(viewModel, riderId),
+          onRiderTap: (riderId) {
+            viewModel.selectRider(riderId);
+            _focusOnRider(viewModel, riderId);
+          },
+          onShowInfo: viewModel.showRiderInfo,
         ),
       ),
     );
@@ -222,7 +257,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return stateAsync.when(
       loading: () => const _LoadingScaffold(),
-      error: (error, stackTrace) => _ErrorScaffold(error: error),
+      error: (error, stackTrace) => AppErrorScreen(
+        error: error,
+        stackTrace: stackTrace,
+        onRetry: () => ref.invalidate(noActiveRideViewModelProvider),
+      ),
       data: (state) => _MapHomeScaffold(
         map: _SelfLocationMap(
           mapController: _mapController,
@@ -279,6 +318,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _mapController.move(location, _recenterZoom);
   }
 
+  /// Presents the Rider Info modal for [riderId] — triggered by
+  /// HomeUiState.infoRiderUid becoming non-null, since showModalBottomSheet
+  /// needs a BuildContext the ViewModel must never hold. Clears
+  /// infoRiderUid once the sheet closes, however it closes (a button
+  /// popping it, or the user just dragging/tapping it away), so state
+  /// stays in sync either way.
+  Future<void> _showRiderInfoModal(
+    BuildContext context,
+    HomeViewModel viewModel,
+    String riderId,
+  ) async {
+    // Opened immediately with a loading state rather than awaited first —
+    // riderInfoFor now makes real Routes API calls (see its own doc
+    // comment for why that's fine here specifically), so there's a real
+    // network round trip to cover instead of assuming it's instant.
+    final future = viewModel.riderInfoFor(riderId);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _RiderInfoModalContent(
+        future: future,
+        onDirections: () => viewModel.openDirections(riderId),
+        onCenterMap: () => _focusOnRider(viewModel, riderId),
+        onRemove: () => _handleRemoveRider(context, viewModel, riderId),
+      ),
+    );
+    viewModel.dismissRiderInfo();
+  }
+
+  /// Removes [riderId] from the ride — [RiderInfoSheet] already pops
+  /// itself before calling this, so `context` here is this screen's own
+  /// (still mounted either way), not the sheet's about-to-be-gone one.
+  Future<void> _handleRemoveRider(
+    BuildContext context,
+    HomeViewModel viewModel,
+    String riderId,
+  ) async {
+    try {
+      await viewModel.removeRider(riderId);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't remove that rider. Try again.")),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Rider removed from the ride')));
+  }
+
   /// The rider sheet's role-aware CTA: ends the ride for everyone (host)
   /// or just leaves it (member). Once that succeeds, [ridesViewModelProvider]
   /// is invalidated so this screen re-resolves to the no-active-ride state
@@ -294,6 +385,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+/// Wraps the Rider Info modal's real content in a loading state while
+/// [future] (a real Routes API round trip, not instant) is pending.
+class _RiderInfoModalContent extends StatelessWidget {
+  const _RiderInfoModalContent({
+    required this.future,
+    required this.onDirections,
+    required this.onCenterMap,
+    required this.onRemove,
+  });
+
+  final Future<RiderInfoDetails?> future;
+  final VoidCallback onDirections;
+  final VoidCallback onCenterMap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<RiderInfoDetails?>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return SizedBox(
+            height: 160,
+            child: Center(
+              child: isCupertino
+                  ? const CupertinoActivityIndicator()
+                  : const CircularProgressIndicator(),
+            ),
+          );
+        }
+        final details = snapshot.data;
+        if (details == null) {
+          return const SizedBox(
+            height: 120,
+            child: Center(child: Text("Couldn't load that rider's info.")),
+          );
+        }
+        return RiderInfoSheet(
+          details: details,
+          onDirections: onDirections,
+          onCenterMap: onCenterMap,
+          onRemove: onRemove,
+        );
+      },
+    );
+  }
+}
+
 class _LoadingScaffold extends StatelessWidget {
   const _LoadingScaffold();
 
@@ -306,25 +445,6 @@ class _LoadingScaffold extends StatelessWidget {
       return CupertinoPageScaffold(child: Center(child: indicator));
     }
     return Scaffold(body: Center(child: indicator));
-  }
-}
-
-class _ErrorScaffold extends StatelessWidget {
-  const _ErrorScaffold({
-    required this.error,
-    this.message = "Couldn't load your rides",
-  });
-
-  final Object error;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Center(child: Text('$message: $error'));
-    if (isCupertino) {
-      return CupertinoPageScaffold(child: content);
-    }
-    return Scaffold(body: content);
   }
 }
 
@@ -480,6 +600,10 @@ class _RideMap extends ConsumerWidget {
     required this.rideId,
     required this.initialCenter,
     required this.destination,
+    required this.routePolyline,
+    required this.selectedRiderUid,
+    required this.onSelectRider,
+    required this.onShowInfo,
     required this.onUserGesture,
   });
 
@@ -487,16 +611,40 @@ class _RideMap extends ConsumerWidget {
   final String rideId;
   final LatLng initialCenter;
   final RideDestination? destination;
+
+  /// Self-to-destination route, decoded and ready to draw — empty draws
+  /// nothing (no destination set yet, or the route hasn't resolved).
+  final List<LatLng> routePolyline;
+
+  /// Whose name label is showing above their marker, if any — owned by
+  /// HomeViewModel (not local widget state), so the sheet's collapsed
+  /// chips and expanded rows can drive the same selection the map does.
+  final String? selectedRiderUid;
+  final ValueChanged<String?> onSelectRider;
+  final ValueChanged<String> onShowInfo;
   final VoidCallback onUserGesture;
 
   static const double _riderDiameter = 40;
+  static const double _selectedRiderDiameter = _riderDiameter * 1.22;
   static const double _destinationSize = 36;
+  static const double _calloutHeight = 36;
+  static const double _calloutGap = 6;
+  static const double _calloutWidth = 180;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final riders =
         ref.watch(ridersForRideProvider(rideId)).value ?? const <Rider>[];
     final destinationPin = destination;
+    Rider? selectedRider;
+    final unselectedRiders = <Rider>[];
+    for (final rider in riders) {
+      if (rider.riderId == selectedRiderUid) {
+        selectedRider = rider;
+      } else {
+        unselectedRiders.add(rider);
+      }
+    }
 
     return FlutterMap(
       mapController: mapController,
@@ -506,16 +654,40 @@ class _RideMap extends ConsumerWidget {
         onPositionChanged: (camera, hasGesture) {
           if (hasGesture) onUserGesture();
         },
+        // Tapping empty map space dismisses whichever label is open — a
+        // marker's own onTap below fires first and re-selects if that's
+        // what was actually tapped, so this only ever clears it.
+        onTap: (_, _) => onSelectRider(null),
       ),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.dynamicarraytech.raa_podham',
         ),
+        if (routePolyline.isNotEmpty)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: routePolyline,
+                strokeWidth: 4,
+                color: AppColors.predawnIndigo.withValues(alpha: 0.7),
+              ),
+            ],
+          ),
         MarkerLayer(
           markers: [
             if (destinationPin != null) _buildDestinationMarker(destinationPin),
-            ...riders.map(_buildMarker),
+            // Unselected riders first, the selected one last — flutter_map
+            // has no explicit z-index, paint order is list order, so
+            // drawing the selected marker (and its label) last is what
+            // raises it above anyone it'd otherwise overlap.
+            ...unselectedRiders.map(
+              (rider) => _buildMarker(rider, isSelected: false),
+            ),
+            if (selectedRider != null) ...[
+              _buildMarker(selectedRider, isSelected: true),
+              _buildCallout(selectedRider),
+            ],
           ],
         ),
         const RichAttributionWidget(
@@ -525,20 +697,79 @@ class _RideMap extends ConsumerWidget {
     );
   }
 
-  Marker _buildMarker(Rider rider) {
+  Marker _buildMarker(Rider rider, {required bool isSelected}) {
+    final diameter = isSelected ? _selectedRiderDiameter : _riderDiameter;
+    final avatar = RiderAvatarCircle(
+      label: rider.displayName,
+      photoUrl: rider.photoUrl,
+      diameter: diameter,
+      background: rider.isSelf
+          ? AppColors.sunriseAmber
+          : AppColors.riderFallbackColor(rider.riderId),
+      border: Border.all(color: Colors.white, width: 2),
+      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+    );
     return Marker(
       point: rider.location,
-      width: _riderDiameter,
-      height: _riderDiameter,
-      child: RiderAvatarCircle(
-        label: rider.displayName,
-        photoUrl: rider.photoUrl,
-        diameter: _riderDiameter,
-        background: rider.isSelf
-            ? AppColors.sunriseAmber
-            : AppColors.predawnIndigo,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+      width: diameter,
+      height: diameter,
+      child: GestureDetector(
+        onTap: () => onSelectRider(rider.riderId),
+        child: avatar,
+      ),
+    );
+  }
+
+  /// The selected rider's name, anchored just above their (now enlarged)
+  /// avatar — plus an info icon opening the Rider Info modal, self
+  /// included (that modal adapts what it shows for yourself, see
+  /// RiderInfoSheet). Self shows both their real name and "(You)", since
+  /// self is the one rider who doesn't otherwise see their own name
+  /// anywhere on the map.
+  Marker _buildCallout(Rider rider) {
+    final label = rider.isSelf ? '${rider.displayName} (You)' : rider.displayName;
+    return Marker(
+      point: rider.location,
+      width: _calloutWidth,
+      height: _calloutHeight + _calloutGap + _selectedRiderDiameter / 2,
+      alignment: Alignment.topCenter,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: _calloutHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: AppColors.firstLightCream,
+              borderRadius: BorderRadius.circular(6),
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+            ),
+            alignment: Alignment.center,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: AppColors.asphaltInk,
+                    ),
+                  ),
+                ),
+                InfoIconButton(
+                  onTap: () => onShowInfo(rider.riderId),
+                  size: 30,
+                  iconSize: 18,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: _calloutGap + _selectedRiderDiameter / 2),
+        ],
       ),
     );
   }

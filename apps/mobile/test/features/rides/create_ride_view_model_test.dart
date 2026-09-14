@@ -68,6 +68,10 @@ class _FakeRideRepository implements RideRepository {
   Future<void> endRide(String rideId) => throw UnimplementedError();
 
   @override
+  Future<void> removeMember(String rideId, String memberUid) =>
+      throw UnimplementedError();
+
+  @override
   Future<List<Ride>> myRides() => throw UnimplementedError();
 }
 

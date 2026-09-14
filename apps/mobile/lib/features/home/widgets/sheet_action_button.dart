@@ -19,7 +19,11 @@ class SheetActionButton extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+
+  /// Null renders the button in its normal disabled look (Flutter/
+  /// Cupertino's own built-in dimming) rather than this widget needing
+  /// its own separate disabled styling.
+  final VoidCallback? onPressed;
 
   /// Tints the pill red instead of the brand amber, for actions that end
   /// or remove the user from something (e.g. leaving/ending a ride).

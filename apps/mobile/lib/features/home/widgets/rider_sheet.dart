@@ -7,6 +7,7 @@ import '../../../widgets/sheet_drag_area.dart';
 import '../../../widgets/sheet_drag_handle.dart';
 import '../view_model/home_view_model.dart';
 import 'home_sheet_chrome.dart';
+import 'info_icon_button.dart';
 import 'rider_avatar_chip.dart';
 import 'sheet_action_button.dart';
 
@@ -25,6 +26,7 @@ class RiderSheet extends StatelessWidget {
     super.key,
     required this.rideName,
     this.destinationName,
+    this.routeSummary,
     required this.riders,
     required this.isHost,
     required this.sheetExtent,
@@ -35,12 +37,17 @@ class RiderSheet extends StatelessWidget {
     required this.onInviteMore,
     required this.onCta,
     required this.onRiderTap,
+    required this.onShowInfo,
   });
 
   final String rideName;
 
   /// The ride's destination, if one was set when it was created.
   final String? destinationName;
+
+  /// E.g. "12.3 km, 24 min" from self to the destination, once the
+  /// route's resolved — null while it's still pending or unavailable.
+  final String? routeSummary;
   final List<RiderVm> riders;
   final bool isHost;
   final ValueListenable<double> sheetExtent;
@@ -54,6 +61,11 @@ class RiderSheet extends StatelessWidget {
   /// Recenters the map on the tapped rider — see
   /// `HomeViewModel.locationOf`.
   final ValueChanged<String> onRiderTap;
+
+  /// Opens the Rider Info modal — only reachable from the expanded list's
+  /// own inline ⓘ (see `_RiderDetailRow`), not the collapsed chip row,
+  /// there's no room for a second tap target at that density.
+  final ValueChanged<String> onShowInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +87,7 @@ class RiderSheet extends StatelessWidget {
                   riderCount: riders.length,
                   rideName: rideName,
                   destinationName: destinationName,
+                  routeSummary: routeSummary,
                 ),
               ],
             ),
@@ -121,6 +134,7 @@ class RiderSheet extends StatelessWidget {
                           riders: riders,
                           scrollController: scrollController,
                           onRiderTap: onRiderTap,
+                          onShowInfo: onShowInfo,
                         )
                       : _CollapsedContent(
                           key: const ValueKey('collapsed'),
@@ -143,11 +157,13 @@ class _HeaderRow extends StatelessWidget {
     required this.riderCount,
     required this.rideName,
     this.destinationName,
+    this.routeSummary,
   });
 
   final int riderCount;
   final String rideName;
   final String? destinationName;
+  final String? routeSummary;
 
   @override
   Widget build(BuildContext context) {
@@ -197,6 +213,14 @@ class _HeaderRow extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (routeSummary != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    routeSummary!,
+                    maxLines: 1,
+                    style: countStyle?.copyWith(color: countColor),
+                  ),
+                ],
               ],
             ),
           ],
@@ -247,6 +271,7 @@ class _RiderChipRow extends StatelessWidget {
         itemBuilder: (context, index) {
           final rider = riders[index];
           return RiderAvatarChip(
+            uid: rider.uid,
             displayName: rider.displayName,
             photoUrl: rider.photoUrl,
             distanceLabel: rider.distanceLabel,
@@ -267,11 +292,13 @@ class _RiderDetailList extends StatelessWidget {
     required this.riders,
     required this.scrollController,
     required this.onRiderTap,
+    required this.onShowInfo,
   });
 
   final List<RiderVm> riders;
   final ScrollController scrollController;
   final ValueChanged<String> onRiderTap;
+  final ValueChanged<String> onShowInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -285,6 +312,7 @@ class _RiderDetailList extends StatelessWidget {
         return _RiderDetailRow(
           rider: rider,
           onTap: () => onRiderTap(rider.uid),
+          onShowInfo: () => onShowInfo(rider.uid),
         );
       },
     );
@@ -292,16 +320,21 @@ class _RiderDetailList extends StatelessWidget {
 }
 
 class _RiderDetailRow extends StatelessWidget {
-  const _RiderDetailRow({required this.rider, required this.onTap});
+  const _RiderDetailRow({
+    required this.rider,
+    required this.onTap,
+    required this.onShowInfo,
+  });
 
   final RiderVm rider;
   final VoidCallback onTap;
+  final VoidCallback onShowInfo;
 
   @override
   Widget build(BuildContext context) {
     final avatarBackground = rider.isSelf
         ? AppColors.sunriseAmber
-        : AppColors.predawnIndigo;
+        : AppColors.riderFallbackColor(rider.uid);
     final sheetBackground = isCupertino
         ? CupertinoTheme.of(context).scaffoldBackgroundColor
         : Theme.of(context).colorScheme.surface;
@@ -317,6 +350,16 @@ class _RiderDetailRow extends StatelessWidget {
           HostBadge(ringColor: sheetBackground),
         ],
       ],
+    );
+
+    // Self gets an info icon too now — the modal adapts what it shows
+    // for yourself (e.g. no Directions/Center-map/Remove, since none of
+    // those apply to yourself) rather than being excluded entirely.
+    final infoIcon = InfoIconButton(
+      onTap: onShowInfo,
+      color: sheetBackground.computeLuminance() > 0.5
+          ? AppColors.asphaltInk.withValues(alpha: 0.6)
+          : Colors.white70,
     );
 
     if (isCupertino) {
@@ -339,7 +382,7 @@ class _RiderDetailRow extends StatelessWidget {
             ],
           ],
         ),
-        trailing: const CupertinoListTileChevron(),
+        trailing: infoIcon,
       );
     }
 
@@ -363,6 +406,8 @@ class _RiderDetailRow extends StatelessWidget {
             const SizedBox(width: 8),
             const _LiveStatusPulse(size: 8),
           ],
+          const SizedBox(width: 8),
+          infoIcon,
         ],
       ),
     );

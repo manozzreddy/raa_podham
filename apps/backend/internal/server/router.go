@@ -16,6 +16,7 @@ type Handlers struct {
 	Ride   *handler.RideHandler
 	User   *handler.UserHandler
 	Places *handler.PlacesHandler
+	Routes *handler.RoutesHandler
 }
 
 // NewRouter builds the app's full route tree: Recovery, Logging, and
@@ -42,13 +43,15 @@ func NewRouter(h Handlers, authClient *auth.Client) http.Handler {
 		r.Post("/rides/join", h.Ride.JoinRide)
 		r.Post("/rides/{id}/leave", h.Ride.LeaveRide)
 		r.Post("/rides/{id}/end", h.Ride.EndRide)
+		r.Post("/rides/{id}/members/{uid}/remove", h.Ride.RemoveMember)
 		r.Get("/users/me/rides", h.User.ListMyRides)
 
-		// Behind auth like everything else here, deliberately: these two
-		// proxy Google's billed Places API, so an unauthenticated caller
-		// must never be able to reach them and run up our bill.
+		// Behind auth like everything else here, deliberately: these
+		// proxy Google's billed Places/Routes APIs, so an unauthenticated
+		// caller must never be able to reach them and run up our bill.
 		r.Get("/places/autocomplete", h.Places.Autocomplete)
 		r.Get("/places/details", h.Places.ResolveLocation)
+		r.Get("/routes", h.Routes.ComputeRoute)
 	})
 
 	return r

@@ -62,7 +62,7 @@ final class DestinationSearchViewModelProvider
 }
 
 String _$destinationSearchViewModelHash() =>
-    r'bfa2200cdb376124d366ff54388320bf91e4dc96';
+    r'd512be64ea321f0acf65c54a5458c29467bd0a22';
 
 /// Backs the dedicated destination-search screen — scoped to just that
 /// screen's lifetime, separate from [CreateRideViewModel], since search

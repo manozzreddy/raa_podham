@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_map/flutter_map.dart' show LatLngBounds;
@@ -6,8 +7,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../services/providers.dart';
+import '../../../services/routes_repository.dart';
 import '../../rides/data/ride_repository.dart';
 import '../../rides/models/ride.dart';
 import '../data/device_location.dart';
@@ -33,6 +36,10 @@ class HomeUiState {
     required this.selfLocation,
     required this.isFollowingUser,
     required this.isLocationUnavailable,
+    required this.routePolyline,
+    required this.routeSummary,
+    required this.selectedRiderUid,
+    required this.infoRiderUid,
   });
 
   final String rideId;
@@ -62,6 +69,28 @@ class HomeUiState {
   /// this rider is invisible to the rest of the group right now. The
   /// View shows a banner prompting them to fix it when this is true.
   final bool isLocationUnavailable;
+
+  /// The route from self to the destination, decoded and ready to draw
+  /// — empty until it resolves (no destination, self location not
+  /// known yet, or the Routes API call failed). A failure here is never
+  /// fatal to the rest of the screen: the destination pin and straight
+  /// line distance already work without it.
+  final List<LatLng> routePolyline;
+
+  /// E.g. "12.3 km from start" for the same route — distance only, no
+  /// duration, and labeled "from start" since it's a one-time snapshot
+  /// from when the ride began, not a live-updating ETA. Null under the
+  /// same conditions [routePolyline] is empty.
+  final String? routeSummary;
+
+  /// The rider whose name label is showing above their marker, if any —
+  /// toggled by tapping a marker, a collapsed chip, or an expanded row.
+  /// Independent of [infoRiderUid]: opening the info modal from a sheet
+  /// row's ⓘ shouldn't also yank the map's selection over to them.
+  final String? selectedRiderUid;
+
+  /// The rider the info modal is currently open for, if any.
+  final String? infoRiderUid;
 }
 
 /// A group member ready for the rider sheet: no coordinates (the map reads
@@ -91,6 +120,62 @@ class RiderVm {
   final bool isHost;
 }
 
+/// Everything the Rider Info modal needs for one rider — resolved on
+/// demand (see [HomeViewModel.riderInfoFor]) rather than carried on every
+/// [RiderVm], since it needs coordinates [RiderVm] deliberately doesn't
+/// have (the map already reads those straight from the live riders
+/// stream instead).
+class RiderInfoDetails {
+  const RiderInfoDetails({
+    required this.uid,
+    required this.displayName,
+    required this.photoUrl,
+    required this.isHost,
+    required this.isOnline,
+    required this.lastUpdatedLabel,
+    required this.distanceFromSelfLabel,
+    required this.distanceToDestinationLabel,
+    required this.relativeToSelfLabel,
+    required this.canNavigate,
+    required this.canRemove,
+    required this.isSelf,
+  });
+
+  final String uid;
+  final String displayName;
+  final String? photoUrl;
+  final bool isHost;
+  final bool isOnline;
+  final bool isSelf;
+
+  /// "Online" or e.g. "Last seen 3m ago".
+  final String lastUpdatedLabel;
+
+  /// E.g. "0.6 km away from you" — real road distance from you to this
+  /// rider (Routes API, TWO_WHEELER), worded explicitly since "0.6 km
+  /// away" alone doesn't say away from whom. Falls back to the same
+  /// straight-line figure the sheet row shows, marked "(approx.)", if
+  /// the API call itself fails.
+  final String distanceFromSelfLabel;
+
+  /// E.g. "2.1 km from destination" — real road distance (Routes API),
+  /// null if the ride has no destination set.
+  final String? distanceToDestinationLabel;
+
+  /// E.g. "1.2 km ahead of you" / "0.4 km behind you" — comparing this
+  /// rider's road distance to the destination against your own (reusing
+  /// the route already computed once at ride start, not a fresh call).
+  /// Null under the same condition [distanceToDestinationLabel] is.
+  final String? relativeToSelfLabel;
+
+  /// Whether Directions/Center-map have a real position to act on.
+  final bool canNavigate;
+
+  /// Whether the viewer can remove this rider — host only, and never
+  /// for the host's own row (that's what End ride is for).
+  final bool canRemove;
+}
+
 /// The home screen's view model, scoped to one ride.
 ///
 /// Resolves the device's own location, merges it with
@@ -103,12 +188,18 @@ class HomeViewModel extends _$HomeViewModel {
   bool _hasStartedLocationResolution = false;
   bool _hasStartedPositionReporting = false;
   bool _hasResolvedSelfLocation = false;
+  bool _hasRequestedRoute = false;
   LatLng _selfLocation = fallbackSelfLocation;
   bool _isFollowingUser = true;
   bool _isLocationUnavailable = false;
+  RouteInfo? _route;
   List<Rider> _lastRiders = const [];
+  String? _selectedRiderUid;
+  String? _infoRiderUid;
   StreamSubscription<Position>? _positionReportSubscription;
   StreamSubscription<bool>? _locationServiceSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
+  Timer? _staleRiderRecheckTimer;
   late Ride _ride;
 
   @override
@@ -122,6 +213,7 @@ class HomeViewModel extends _$HomeViewModel {
     if (!_hasStartedPositionReporting) {
       _hasStartedPositionReporting = true;
       _startReportingPosition();
+      _armDisconnectCleanup();
       unawaited(_checkInitialLocationAvailability());
       _locationServiceSubscription = watchLocationServicesEnabled().listen((
         enabled,
@@ -129,12 +221,22 @@ class HomeViewModel extends _$HomeViewModel {
         _isLocationUnavailable = !enabled;
         _publish();
       });
-      // Only stops the device's own streams on dispose — the RTDB entry
-      // itself is left alone here, since disposal (e.g. navigating away
-      // momentarily) isn't the same as actually leaving the ride.
+      // Riders don't need a fresh position to go from "online" to "stale
+      // and offline" — pure time passing is what does it (see
+      // staleRiderThreshold) — so this re-derives isOnline on a timer
+      // instead of only whenever someone's data happens to change.
+      _staleRiderRecheckTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _publish(),
+      );
+      // Only stops the device's own streams/timers on dispose — the RTDB
+      // entry itself is left alone here, since disposal (e.g. navigating
+      // away momentarily) isn't the same as actually leaving the ride.
       ref.onDispose(() {
         _positionReportSubscription?.cancel();
         _locationServiceSubscription?.cancel();
+        _connectionSubscription?.cancel();
+        _staleRiderRecheckTimer?.cancel();
       });
     }
 
@@ -182,6 +284,30 @@ class HomeViewModel extends _$HomeViewModel {
         debugPrint('position stream errored for ride ${_ride.id}: $error');
       },
     );
+  }
+
+  /// Arms the server-side isOnline cleanup for this device's own position
+  /// entry, and re-arms it after every reconnect — an onDisconnect
+  /// registration fires (and needs re-establishing) at most once per
+  /// connection, not once per app session, so a brief network drop and
+  /// reconnect without this would leave later disconnects unhandled.
+  void _armDisconnectCleanup() {
+    final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
+    if (uid == null) return;
+    final positions = ref.read(positionRepositoryProvider);
+    _connectionSubscription = positions.watchConnected().listen((connected) {
+      if (!connected) return;
+      unawaited(
+        positions
+            .keepOnlineFlagInSyncOnDisconnect(rideId: _ride.id, uid: uid)
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint(
+                'keepOnlineFlagInSyncOnDisconnect failed for ride '
+                '${_ride.id}: $error',
+              );
+            }),
+      );
+    });
   }
 
   Future<void> _checkInitialLocationAvailability() async {
@@ -262,12 +388,222 @@ class HomeViewModel extends _$HomeViewModel {
     return null;
   }
 
+  /// Toggles the name label above a rider's marker — tapping the same
+  /// uid again (or passing null) clears it. Driven by tapping a marker,
+  /// a collapsed chip, or an expanded row, so map and sheet always agree
+  /// on who's currently selected.
+  void selectRider(String? uid) {
+    _selectedRiderUid = _selectedRiderUid == uid ? null : uid;
+    _publish();
+  }
+
+  /// Opens the Rider Info modal for [uid] — independent of
+  /// [selectRider]/[_selectedRiderUid], so a sheet row's ⓘ doesn't also
+  /// move the map's selection over to them.
+  void showRiderInfo(String uid) {
+    _infoRiderUid = uid;
+    _publish();
+  }
+
+  void dismissRiderInfo() {
+    _infoRiderUid = null;
+    _publish();
+  }
+
+  /// Everything the Rider Info modal needs for [riderId], or null if
+  /// that rider isn't in the currently-known list (e.g. they left while
+  /// the modal was still open).
+  ///
+  /// Unlike the sheet row/map label's distances (straight-line, computed
+  /// continuously as positions update), this uses the real Routes API
+  /// for actual road distance — justified here specifically because it's
+  /// only ever requested once, on an explicit tap, not on every position
+  /// update the way a continuously-live figure would be.
+  Future<RiderInfoDetails?> riderInfoFor(String riderId) async {
+    Rider? rider;
+    for (final candidate in _lastRiders) {
+      if (candidate.riderId == riderId) {
+        rider = candidate;
+        break;
+      }
+    }
+    if (rider == null) return null;
+
+    final routes = ref.read(routesRepositoryProvider);
+    final displayName = rider.isSelf ? 'You' : rider.displayName;
+
+    String distanceFromSelfLabel;
+    if (rider.isSelf) {
+      distanceFromSelfLabel = 'This is you';
+    } else {
+      try {
+        final selfToRider = await routes.computeRoute(
+          origin: _selfLocation,
+          destination: rider.location,
+        );
+        distanceFromSelfLabel =
+            '${_formatDistance(selfToRider.distanceMeters.toDouble())} away from you';
+      } catch (error) {
+        // Never fatal to the rest of the modal — fall back to the same
+        // straight-line math the sheet row already shows rather than an
+        // empty field.
+        debugPrint('computeRoute (self to rider) failed: $error');
+        distanceFromSelfLabel =
+            '${_formatDistance(_distanceFromSelf(rider))} away from you (approx.)';
+      }
+    }
+
+    final destination = _ride.destination;
+    String? distanceToDestinationLabel;
+    String? relativeToSelfLabel;
+    if (destination != null) {
+      if (rider.isSelf) {
+        // Reuses the route already computed once at ride start (_route)
+        // instead of requesting your own distance to the destination
+        // all over again — it's exactly the same figure. No
+        // relativeToSelfLabel here: comparing yourself to yourself isn't
+        // meaningful.
+        final selfRoute = _route;
+        if (selfRoute != null) {
+          distanceToDestinationLabel =
+              '${_formatDistance(selfRoute.distanceMeters.toDouble())} '
+              'from destination';
+        }
+      } else {
+        try {
+          final riderToDestination = await routes.computeRoute(
+            origin: rider.location,
+            destination: LatLng(destination.lat, destination.lng),
+          );
+          distanceToDestinationLabel =
+              '${_formatDistance(riderToDestination.distanceMeters.toDouble())} '
+              'from destination';
+          final selfToDestinationMeters = _route?.distanceMeters;
+          if (selfToDestinationMeters != null) {
+            relativeToSelfLabel = _formatRelativeToSelf(
+              riderToDestination.distanceMeters.toDouble(),
+              selfToDestinationMeters.toDouble(),
+            );
+          }
+        } catch (error) {
+          debugPrint('computeRoute (rider to destination) failed: $error');
+        }
+      }
+    }
+
+    return RiderInfoDetails(
+      uid: rider.riderId,
+      displayName: displayName,
+      photoUrl: rider.photoUrl,
+      isHost: rider.riderId == _ride.hostId,
+      isOnline: rider.isOnline,
+      lastUpdatedLabel: _formatLastUpdated(rider),
+      distanceFromSelfLabel: distanceFromSelfLabel,
+      distanceToDestinationLabel: distanceToDestinationLabel,
+      relativeToSelfLabel: relativeToSelfLabel,
+      canNavigate: !rider.isSelf,
+      canRemove: _isHost && !rider.isSelf,
+      isSelf: rider.isSelf,
+    );
+  }
+
+  /// Removes [riderId] from the ride — the backend re-checks that the
+  /// caller is the host itself (see [RiderInfoDetails.canRemove], which
+  /// only keeps the button from rendering for anyone else client-side).
+  /// The rider's own device stops being able to report a position the
+  /// moment this succeeds (database.rules.json), so there's nothing
+  /// further to do here for that to take effect on everyone else's map.
+  Future<void> removeRider(String riderId) async {
+    await ref.read(rideRepositoryProvider).removeMember(_ride.id, riderId);
+  }
+
+  /// Opens the device's default maps app for turn-by-turn directions to
+  /// [riderId]'s last known position — a straight hand-off to Apple/
+  /// Google Maps, not our own in-app Routes API: that's metered per
+  /// call, and paying for a full route for every rider someone might tap
+  /// on isn't worth it when the OS-level maps app already does this for
+  /// free.
+  Future<void> openDirections(String riderId) async {
+    final location = locationOf(riderId);
+    if (location == null) return;
+    final lat = location.latitude;
+    final lng = location.longitude;
+    final uri = Platform.isIOS
+        ? Uri.parse('https://maps.apple.com/?daddr=$lat,$lng')
+        : Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (error) {
+      debugPrint('openDirections failed for $riderId: $error');
+    }
+  }
+
+  double _distanceBetween(LatLng a, LatLng b) {
+    return Geolocator.distanceBetween(
+      a.latitude,
+      a.longitude,
+      b.latitude,
+      b.longitude,
+    );
+  }
+
+  /// E.g. "1.2 km ahead of you" — riderToDestination smaller than
+  /// selfToDestination means that rider has less distance left to cover
+  /// than you do, i.e. they're ahead, not that they're geographically in
+  /// front of you.
+  String _formatRelativeToSelf(
+    double riderToDestination,
+    double selfToDestination,
+  ) {
+    final diffKm = (selfToDestination - riderToDestination) / 1000;
+    if (diffKm.abs() < 0.1) return 'About the same distance to go as you';
+    final formatted = diffKm.abs().toStringAsFixed(1);
+    return diffKm > 0 ? '$formatted km ahead of you' : '$formatted km behind you';
+  }
+
+  String _formatLastUpdated(Rider rider) {
+    if (rider.isOnline) return 'Online';
+    final age = DateTime.now().difference(rider.updatedAt);
+    if (age.inMinutes < 1) return 'Last seen just now';
+    if (age.inMinutes < 60) return 'Last seen ${age.inMinutes}m ago';
+    return 'Last seen ${age.inHours}h ago';
+  }
+
   Future<void> _resolveInitialLocation() async {
     final position = await acquireCurrentPosition();
     if (position == null) return;
     _selfLocation = LatLng(position.latitude, position.longitude);
     _hasResolvedSelfLocation = true;
     _publish();
+    unawaited(_computeRouteToDestinationIfNeeded());
+  }
+
+  /// Computes the route from self to the destination once, the first
+  /// time both are known — not on every position update: the destination
+  /// is a fixed meet-up pin, not turn-by-turn navigation, so continuously
+  /// recomputing as the rider moves would just be a paid API call for a
+  /// line that wouldn't visibly change much ride to ride.
+  Future<void> _computeRouteToDestinationIfNeeded() async {
+    if (_hasRequestedRoute) return;
+    final destination = _ride.destination;
+    if (destination == null) return;
+    _hasRequestedRoute = true;
+
+    try {
+      final route = await ref
+          .read(routesRepositoryProvider)
+          .computeRoute(
+            origin: _selfLocation,
+            destination: LatLng(destination.lat, destination.lng),
+          );
+      _route = route;
+      _publish();
+    } catch (error) {
+      // Never fatal to the rest of the screen — the destination pin and
+      // straight-line rider distances already work without this; a
+      // rider just doesn't get a route line/ETA this session.
+      debugPrint('computeRoute failed for ride ${_ride.id}: $error');
+    }
   }
 
   /// Re-publishes [state] using the riders from the last successful
@@ -302,7 +638,21 @@ class HomeViewModel extends _$HomeViewModel {
       selfLocation: _selfLocation,
       isFollowingUser: _isFollowingUser,
       isLocationUnavailable: _isLocationUnavailable,
+      routePolyline: _route?.points ?? const [],
+      routeSummary: _route == null ? null : _formatRouteSummary(_route!),
+      selectedRiderUid: _selectedRiderUid,
+      infoRiderUid: _infoRiderUid,
     );
+  }
+
+  /// Distance only, not duration — computed once at the start of the ride
+  /// (see _computeRouteToDestinationIfNeeded), so a duration would read
+  /// as a live ETA it isn't. "from start" makes the distance's own
+  /// staleness explicit too, rather than implying it tracks the rider's
+  /// current position.
+  String _formatRouteSummary(RouteInfo route) {
+    final km = (route.distanceMeters / 1000).toStringAsFixed(1);
+    return '$km km from start';
   }
 
   /// Self first, then everyone else nearest-first.
@@ -313,14 +663,8 @@ class HomeViewModel extends _$HomeViewModel {
     return [...self, ...others];
   }
 
-  double _distanceFromSelf(Rider rider) {
-    return Geolocator.distanceBetween(
-      _selfLocation.latitude,
-      _selfLocation.longitude,
-      rider.location.latitude,
-      rider.location.longitude,
-    );
-  }
+  double _distanceFromSelf(Rider rider) =>
+      _distanceBetween(_selfLocation, rider.location);
 
   RiderVm _toRiderVm(Rider rider) {
     final distanceLabel = rider.isSelf
@@ -328,16 +672,10 @@ class HomeViewModel extends _$HomeViewModel {
         : (_hasResolvedSelfLocation
               ? _formatDistance(_distanceFromSelf(rider))
               : '—');
-    // Only self has a photo to show at all right now — other riders'
-    // Google/Apple photos aren't plumbed through Firestore membership
-    // yet, so they fall back to their initial like before.
-    final photoUrl = rider.isSelf
-        ? ref.read(firebaseAuthServiceProvider).currentUser?.photoURL
-        : null;
     return RiderVm(
       uid: rider.riderId,
       displayName: rider.isSelf ? 'You' : rider.displayName,
-      photoUrl: photoUrl,
+      photoUrl: rider.photoUrl,
       distanceLabel: distanceLabel,
       isOnline: rider.isOnline,
       isSelf: rider.isSelf,

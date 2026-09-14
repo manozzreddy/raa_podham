@@ -109,6 +109,23 @@ func (h *RideHandler) EndRide(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *RideHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
+	uid, ok := middleware.UIDFromContext(r.Context())
+	if !ok {
+		respondError(w, apperror.Forbidden("missing authenticated user"))
+		return
+	}
+
+	rideID := chi.URLParam(r, "id")
+	memberUID := chi.URLParam(r, "uid")
+	if err := h.rides.RemoveMember(r.Context(), uid, rideID, memberUID); err != nil {
+		respondError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func respondJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

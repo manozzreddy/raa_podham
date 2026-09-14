@@ -23,4 +23,22 @@ abstract final class AppColors {
 
   /// Divider color in light mode.
   static const Color hairline = Color(0xFFE8DFD3);
+
+  /// Rider-avatar background colors for anyone but self (self always
+  /// gets [sunriseAmber], everywhere) — deliberately not reusing that
+  /// color here so self stays visually unique among the group.
+  static const List<Color> _riderPalette = [
+    predawnIndigo,
+    Color(0xFF2E7D6B), // teal
+    Color(0xFF6B4C9A), // violet
+    Color(0xFFB5484F), // brick red
+    Color(0xFF3D6EA5), // steel blue
+  ];
+
+  /// A stable background color for a rider's avatar, picked
+  /// deterministically from [uid] so the same rider always gets the same
+  /// color everywhere they appear (map marker, sheet chip, detail row),
+  /// without anything needing to coordinate assignment.
+  static Color riderFallbackColor(String uid) =>
+      _riderPalette[uid.hashCode.abs() % _riderPalette.length];
 }

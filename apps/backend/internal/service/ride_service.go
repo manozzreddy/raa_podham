@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/dynamicarraytech/raa-podham/backend/internal/apperror"
@@ -70,10 +71,8 @@ func (s *RideService) JoinRide(ctx context.Context, uid, inviteCode string) (*mo
 		return nil, apperror.Gone("this ride has ended")
 	}
 
-	for _, memberUID := range ride.MemberUIDs {
-		if memberUID == uid {
-			return nil, apperror.Conflict("already a member of this ride")
-		}
+	if slices.Contains(ride.MemberUIDs, uid) {
+		return nil, apperror.Conflict("already a member of this ride")
 	}
 
 	member := &model.Member{
@@ -133,6 +132,42 @@ func (s *RideService) EndRide(ctx context.Context, uid, rideID string) error {
 		return apperror.Internal(err)
 	}
 	if err := s.presence.ClearRide(ctx, rideID); err != nil {
+		return apperror.Internal(err)
+	}
+	return nil
+}
+
+// RemoveMember lets the host evict a rider mid-ride — anyone else calling
+// this gets Forbidden, and the host can't target themself (EndRide is the
+// host's own way off the ride) or someone who isn't currently a member.
+func (s *RideService) RemoveMember(ctx context.Context, hostUID, rideID, targetUID string) error {
+	ride, err := s.rides.GetRideByID(ctx, rideID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return apperror.NotFound("ride")
+	}
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if hostUID != ride.HostUID {
+		return apperror.Forbidden("only the host can remove a rider")
+	}
+	if targetUID == ride.HostUID {
+		return apperror.BadRequest("the host can't remove themself — end the ride instead")
+	}
+
+	if !slices.Contains(ride.MemberUIDs, targetUID) {
+		return apperror.NotFound("member")
+	}
+
+	if err := s.rides.RemoveMember(ctx, rideID, targetUID); err != nil {
+		return apperror.Internal(err)
+	}
+	// Sets present:false in the RTDB presence mirror, which
+	// database.rules.json's positions write rule now also checks — this
+	// is what actually stops the removed rider's device from continuing
+	// to write its position after this call, not just a display flag.
+	if err := s.presence.SetMember(ctx, rideID, targetUID, false); err != nil {
 		return apperror.Internal(err)
 	}
 	return nil

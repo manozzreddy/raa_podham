@@ -147,6 +147,7 @@ class HostBadge extends StatelessWidget {
 class RiderAvatarChip extends StatelessWidget {
   const RiderAvatarChip({
     super.key,
+    required this.uid,
     required this.displayName,
     this.photoUrl,
     required this.distanceLabel,
@@ -156,6 +157,10 @@ class RiderAvatarChip extends StatelessWidget {
     this.onTap,
   });
 
+  /// Only used to pick a stable fallback avatar color (see
+  /// `AppColors.riderFallbackColor`) — not otherwise needed here, tap
+  /// handling is the caller's own `onTap` closure.
+  final String uid;
   final String displayName;
   final String? photoUrl;
   final String distanceLabel;
@@ -195,7 +200,7 @@ class RiderAvatarChip extends StatelessWidget {
                     diameter: _avatarDiameter,
                     background: isSelf
                         ? AppColors.sunriseAmber
-                        : AppColors.predawnIndigo,
+                        : AppColors.riderFallbackColor(uid),
                   ),
                   if (isHost)
                     Positioned(

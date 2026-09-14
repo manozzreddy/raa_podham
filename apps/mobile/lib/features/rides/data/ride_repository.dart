@@ -49,6 +49,14 @@ class RideRepository {
     await _apiClient.post<void>('/rides/$rideId/end');
   }
 
+  /// Host-only — the backend rejects this for anyone else. Also flips
+  /// that rider's RTDB presence to absent, which `database.rules.json`'s
+  /// positions write rule now checks, so their device can't keep
+  /// reporting a position after this succeeds.
+  Future<void> removeMember(String rideId, String memberUid) async {
+    await _apiClient.post<void>('/rides/$rideId/members/$memberUid/remove');
+  }
+
   Future<List<Ride>> myRides() async {
     final response = await _apiClient.get<Map<String, dynamic>>(
       '/users/me/rides',

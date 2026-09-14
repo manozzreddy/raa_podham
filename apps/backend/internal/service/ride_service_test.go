@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -90,11 +91,8 @@ func (f *fakeRideRepository) EndRide(ctx context.Context, rideID string) error {
 func (f *fakeRideRepository) ListRidesForUser(ctx context.Context, uid string) ([]*model.Ride, error) {
 	var result []*model.Ride
 	for _, ride := range f.rides {
-		for _, memberUID := range ride.MemberUIDs {
-			if memberUID == uid {
-				result = append(result, ride)
-				break
-			}
+		if slices.Contains(ride.MemberUIDs, uid) {
+			result = append(result, ride)
 		}
 	}
 	return result, nil
@@ -292,6 +290,81 @@ func TestRideService_LeaveRide_HostEndsRide(t *testing.T) {
 	}
 	if !presence.cleared[ride.ID] {
 		t.Errorf("expected presence to be cleared when the host leaves")
+	}
+}
+
+func TestRideService_RemoveMember(t *testing.T) {
+	tests := []struct {
+		name       string
+		callerUID  string
+		targetUID  string
+		wantCode   string // "" means no error expected
+	}{
+		{
+			name:      "host removes a rider",
+			callerUID: "host-1",
+			targetUID: "rider-1",
+			wantCode:  "",
+		},
+		{
+			name:      "non-host forbidden",
+			callerUID: "rider-1",
+			targetUID: "rider-2",
+			wantCode:  "forbidden",
+		},
+		{
+			name:      "host can't remove themself",
+			callerUID: "host-1",
+			targetUID: "host-1",
+			wantCode:  "bad_request",
+		},
+		{
+			name:      "target isn't a member",
+			callerUID: "host-1",
+			targetUID: "someone-else",
+			wantCode:  "not_found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rides := newFakeRideRepository()
+			presence := newFakePresenceRepository()
+			svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+
+			rides.seedRide(&model.Ride{
+				ID:         "ride-1",
+				InviteCode: "CODE01",
+				Status:     model.RideStatusActive,
+				HostUID:    "host-1",
+				MemberUIDs: []string{"host-1", "rider-1", "rider-2"},
+			})
+
+			err := svc.RemoveMember(context.Background(), tt.callerUID, "ride-1", tt.targetUID)
+			if tt.wantCode == "" {
+				if err != nil {
+					t.Fatalf("RemoveMember returned error: %v", err)
+				}
+				got, getErr := rides.GetRideByID(context.Background(), "ride-1")
+				if getErr != nil {
+					t.Fatalf("GetRideByID returned error: %v", getErr)
+				}
+				if slices.Contains(got.MemberUIDs, tt.targetUID) {
+					t.Errorf("expected %q to be removed from MemberUIDs, got %v", tt.targetUID, got.MemberUIDs)
+				}
+				if presence.present["ride-1"][tt.targetUID] {
+					t.Errorf("expected %q to be marked absent in presence repo", tt.targetUID)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if got := appErrorCode(t, err); got != tt.wantCode {
+				t.Errorf("error code = %q, want %q", got, tt.wantCode)
+			}
+		})
 	}
 }
 
