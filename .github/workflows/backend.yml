@@ -1,16 +1,14 @@
 name: Backend CI/CD
 
-# Runs the backend's tests on every push/PR that touches it; deploys to
-# Cloud Run only on main, and only once those tests have passed.
+# Only runs once code actually lands on main (a merged PR, or a direct
+# push there) — not on every feature-branch push. workflow_dispatch is
+# just for a manual re-run of the same thing from the Actions tab.
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - 'apps/backend/**'
       - '.github/workflows/backend.yml'
-  pull_request:
-    paths:
-      - 'apps/backend/**'
   workflow_dispatch: {}
 
 # id-token: write is what lets this workflow mint a short-lived GCP token
@@ -40,7 +38,6 @@ jobs:
 
   deploy:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
