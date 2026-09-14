@@ -1,0 +1,62 @@
+name: Backend CI/CD
+
+# Only runs for a commit landing directly on one of these branches —
+# add more here as needed. workflow_dispatch is just for a manual re-run
+# of the same thing from the Actions tab.
+on:
+  push:
+    branches:
+      - main
+      - feat/project-initial-setup
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch: {}
+
+# id-token: write is what lets this workflow mint a short-lived GCP token
+# via Workload Identity Federation — no service-account key stored as a
+# GitHub secret.
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: apps/backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+
+      - run: go build ./...
+      - run: go vet ./...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/21519965328/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@raa-podham.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy raa-podham-api \
+            --source . \
+            --region asia-south1 \
+            --project raa-podham \
+            --set-env-vars "FIREBASE_PROJECT_ID=raa-podham,RTDB_URL=https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app,ENV=production" \
+            --set-secrets "GOOGLE_PLACES_API_KEY=GOOGLE_PLACES_AND_ROUTES_API_KEY:latest" \
+            --quiet
