@@ -2,6 +2,20 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Lets position reporting keep going once the app is backgrounded
+         (screen off, another app in front) instead of stopping the
+         moment it's not the foreground activity — required by Android
+         10+ as its own, separately-granted permission on top of the two
+         above (see device_location.dart's watchCurrentPosition). -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <!-- Required to run geolocator's foreground service, which is what
+         actually keeps location updates flowing while backgrounded. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- Android 13+ requires this as its own runtime permission for any
+         notification the app shows, the foreground service's persistent
+         one included (see device_location.dart, which requests it). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

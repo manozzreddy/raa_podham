@@ -3,25 +3,27 @@ import 'package:flutter/foundation.dart';
 
 import 'firebase_auth_service.dart';
 
-/// Base URL of the deployed Cloud Run backend, used for release/profile
-/// builds — override per-build with `--dart-define=RAA_PODHAM_API_BASE_URL=...`.
-const String _defaultApiBaseUrl = 'https://api.raapodham.example.com';
+/// Base URL of the deployed Cloud Run backend — the default for
+/// release/profile builds.
+const String _defaultApiBaseUrl = 'https://raa-podham-api-vf6ipdg7dq-el.a.run.app';
 
-/// Debug builds always hit the locally-run backend instead. Set to the
-/// dev machine's LAN IP (not "localhost") so a physical device on the
-/// same Wi-Fi can reach it — "localhost" from the device's own
+/// Debug builds hit the locally-run backend by default instead. Set to
+/// the dev machine's LAN IP (not "localhost") so a physical device on
+/// the same Wi-Fi can reach it — "localhost" from the device's own
 /// perspective means the device itself, not this machine. The backend
 /// already binds to all interfaces (see internal/config's HOST var), so
 /// nothing on that side needs to change if this IP does; re-check it
 /// with `ipconfig` if the dev machine reconnects to a different network.
 const String _localApiBaseUrl = 'http://192.168.1.100:8080';
 
+/// Flip to true to make a debug build hit the deployed backend instead
+/// of the local one — e.g. to test against real data without running
+/// the backend yourself. Leave false for the normal local dev loop.
+const bool _debugUseDeployedBackend = true;
+
 String get _resolvedApiBaseUrl {
-  if (kDebugMode) return _localApiBaseUrl;
-  return const String.fromEnvironment(
-    'RAA_PODHAM_API_BASE_URL',
-    defaultValue: _defaultApiBaseUrl,
-  );
+  if (!kDebugMode) return _defaultApiBaseUrl;
+  return _debugUseDeployedBackend ? _defaultApiBaseUrl : _localApiBaseUrl;
 }
 
 /// Thin Dio wrapper for the Cloud Run backend — the only place that

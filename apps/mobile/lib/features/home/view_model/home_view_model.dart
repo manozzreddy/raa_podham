@@ -354,7 +354,10 @@ class HomeViewModel extends _$HomeViewModel {
   }
 
   /// Ends the ride for everyone if the current user is the host, otherwise
-  /// just removes them from it.
+  /// just removes them from it. Throws (letting the View show an error)
+  /// only if that part fails — the actual leave/end already having
+  /// succeeded is what matters to the caller, not whether the RTDB
+  /// tidy-up below also happened to.
   Future<void> endOrLeaveRide() async {
     final repository = ref.read(rideRepositoryProvider);
     if (_isHost) {
@@ -365,12 +368,22 @@ class HomeViewModel extends _$HomeViewModel {
     // Ending already wipes the whole rides/{id} RTDB subtree server-side
     // (RTDBPresenceRepository.ClearRide), so this is only load-bearing for
     // the leave case — but harmless (and one fewer thing to keep in sync)
-    // to always do it here regardless of which branch ran.
+    // to always do it here regardless of which branch ran. Best-effort:
+    // by the time this runs the backend has already flipped this
+    // rider's RTDB presence to absent, so a failure here (this device
+    // lost its connection right at the wrong moment, say) shouldn't
+    // make an otherwise-successful leave/end look like it failed —
+    // staleRiderThreshold already covers a position entry that's just
+    // never updated again.
     final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
     if (uid != null) {
-      await ref
-          .read(positionRepositoryProvider)
-          .clearPosition(rideId: _ride.id, uid: uid);
+      try {
+        await ref
+            .read(positionRepositoryProvider)
+            .clearPosition(rideId: _ride.id, uid: uid);
+      } catch (error) {
+        debugPrint('clearPosition failed after leaving ${_ride.id}: $error');
+      }
     }
   }
 

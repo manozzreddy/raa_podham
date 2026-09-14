@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:geolocator/geolocator.dart';
 // ServiceStatus exists in both packages; we mean geolocator's (location
 // services on/off), not permission_handler's.
@@ -43,18 +45,29 @@ const _minReportInterval = Duration(seconds: 5);
 /// OS itself skips notifying Dart for jitter under 10m) and
 /// [_minReportInterval] (Dart-side, since distanceFilter alone doesn't
 /// bound how often two 10m-apart updates can arrive).
+///
+/// Runs as a foreground service (Android) / with background updates
+/// enabled (iOS) via [_platformLocationSettings], so this keeps
+/// reporting once the app is backgrounded — not just while it's the
+/// foreground activity, which is all a plain [LocationSettings] stream
+/// would otherwise manage. Requesting "always" below is what that
+/// actually depends on; a user who only grants "while in use" still
+/// gets everything working normally in the foreground, they just drop
+/// off the map for everyone else once they background the app.
 Stream<Position> watchCurrentPosition() async* {
   try {
-    final permission = await Permission.locationWhenInUse.request();
-    if (!permission.isGranted) return;
+    await Permission.locationAlways.request();
+    // Android 13+ only — a no-op on iOS/older Android (permission_handler
+    // reports those as already granted). Without this the foreground
+    // service still runs, but its notification silently doesn't show, so
+    // a rider gets no indication background sharing is active.
+    await Permission.notification.request();
+    if (!await Permission.locationWhenInUse.isGranted) return;
     if (!await Geolocator.isLocationServiceEnabled()) return;
 
     DateTime? lastReportedAt;
     await for (final position in Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
+      locationSettings: _platformLocationSettings(),
     )) {
       final now = DateTime.now();
       if (lastReportedAt != null &&
@@ -67,6 +80,43 @@ Stream<Position> watchCurrentPosition() async* {
   } catch (_) {
     // See acquireCurrentPosition's catch above — same reasoning.
   }
+}
+
+/// The persistent notification Android requires while a location-type
+/// foreground service is running — not cosmetic, the service (and so
+/// background reporting) doesn't run without one.
+///
+/// Spells out what swiping it away actually does (stops the foreground
+/// service, so this rider stops reporting), since Android 13+ always
+/// lets a rider dismiss it — see watchCurrentPosition's own doc comment
+/// — and a bare "sharing your location" text wouldn't tip anyone off
+/// that dismissing it isn't a no-op the way it is for most notifications.
+const _foregroundNotificationTitle = 'Raa Podham';
+const _foregroundNotificationText =
+    'Sharing your location with your ride group. Dismiss this to stop.';
+
+LocationSettings _platformLocationSettings() {
+  if (Platform.isAndroid) {
+    return AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: _foregroundNotificationTitle,
+        notificationText: _foregroundNotificationText,
+        setOngoing: true,
+      ),
+    );
+  }
+  if (Platform.isIOS) {
+    return AppleSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+      allowBackgroundLocationUpdates: true,
+      pauseLocationUpdatesAutomatically: false,
+      showBackgroundLocationIndicator: true,
+    );
+  }
+  return const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10);
 }
 
 /// Whether location is currently usable at all — permission granted

@@ -226,7 +226,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           sheetMaxExtent: maxSheetExtent,
           scrollController: scrollController,
           onInviteMore: viewModel.inviteMore,
-          onCta: () => _handleEndOrLeaveRide(viewModel),
+          onCta: () => _handleEndOrLeaveRide(viewModel, isHost: state.isHost),
           onRiderTap: (riderId) {
             viewModel.selectRider(riderId);
             _focusOnRider(viewModel, riderId);
@@ -375,12 +375,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// is invalidated so this screen re-resolves to the no-active-ride state
   /// on its own — no explicit navigation needed, unlike the sign-in/out
   /// flow which the router's redirect already drives the same way.
-  Future<void> _handleEndOrLeaveRide(HomeViewModel viewModel) async {
-    // try {
-    await viewModel.endOrLeaveRide();
-    // } catch (_) {
-    //   return;
-    // }
+  Future<void> _handleEndOrLeaveRide(
+    HomeViewModel viewModel, {
+    required bool isHost,
+  }) async {
+    try {
+      await viewModel.endOrLeaveRide();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isHost
+                ? "Couldn't end the ride. Try again."
+                : "Couldn't leave the ride. Try again.",
+          ),
+        ),
+      );
+      return;
+    }
     ref.invalidate(ridesViewModelProvider);
   }
 }
@@ -775,8 +788,11 @@ class _RideMap extends ConsumerWidget {
   }
 
   /// A distinct pin (not an avatar) so the ride's destination never reads
-  /// as just another rider dot — same shape/color language as
-  /// [DestinationSearchScreen]'s own place-row icon.
+  /// as just another rider dot — same pin shape as
+  /// [DestinationSearchScreen]'s own place-row icon, in the classic
+  /// map-pin red so it also can't be mistaken for any rider's avatar
+  /// color (the rider palette and predawnIndigo, this pin's old color,
+  /// happen to be the same value).
   Marker _buildDestinationMarker(RideDestination destination) {
     return Marker(
       point: LatLng(destination.lat, destination.lng),
@@ -788,7 +804,7 @@ class _RideMap extends ConsumerWidget {
       alignment: Alignment.topCenter,
       child: Icon(
         isCupertino ? CupertinoIcons.location_solid : Icons.place,
-        color: AppColors.predawnIndigo,
+        color: AppColors.roadFlareRed,
         size: _destinationSize,
         shadows: const [Shadow(color: Colors.black26, blurRadius: 4)],
       ),

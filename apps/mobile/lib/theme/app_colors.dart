@@ -15,6 +15,13 @@ abstract final class AppColors {
   /// Dark ground color / icon backing plate.
   static const Color predawnIndigo = Color(0xFF1C2541);
 
+  /// The ride destination pin — the classic "map marker" red, distinct
+  /// from both destructive-action red (Colors.red/
+  /// CupertinoColors.destructiveRed, used for Remove/End) and the rider
+  /// palette's own brick red below, so the pin never gets read as either
+  /// of those.
+  static const Color roadFlareRed = Color(0xFFE0483F);
+
   /// Light ground color.
   static const Color firstLightCream = Color(0xFFFFF7EE);
 
