@@ -10,8 +10,9 @@ import (
 type RideStatus string
 
 const (
-	RideStatusActive RideStatus = "active"
-	RideStatusEnded  RideStatus = "ended"
+	RideStatusActive    RideStatus = "active"
+	RideStatusScheduled RideStatus = "scheduled"
+	RideStatusEnded     RideStatus = "ended"
 )
 
 // Destination is the pin shown on the map for everyone in the ride — not
@@ -25,15 +26,18 @@ type Destination struct {
 
 // Ride mirrors the rides/{id} Firestore document.
 type Ride struct {
-	ID          string       `firestore:"-"`
-	Name        string       `firestore:"name"`
-	HostUID     string       `firestore:"hostUid"`
-	InviteCode  string       `firestore:"inviteCode"`
-	Status      RideStatus   `firestore:"status"`
-	MemberUIDs  []string     `firestore:"memberUids"`
-	Destination *Destination `firestore:"destination,omitempty"`
-	CreatedAt   time.Time    `firestore:"createdAt"`
-	EndedAt     *time.Time   `firestore:"endedAt,omitempty"`
+	ID            string       `firestore:"-"`
+	Name          string       `firestore:"name"`
+	HostUID       string       `firestore:"hostUid"`
+	InviteCode    string       `firestore:"inviteCode"`
+	Status        RideStatus   `firestore:"status"`
+	MemberUIDs    []string     `firestore:"memberUids"`
+	Destination   *Destination `firestore:"destination,omitempty"`
+	ScheduledAt   *time.Time   `firestore:"scheduledAt,omitempty"`
+	Notes         string       `firestore:"notes,omitempty"`
+	CoverPhotoURL string       `firestore:"coverPhotoUrl,omitempty"`
+	CreatedAt     time.Time    `firestore:"createdAt"`
+	EndedAt       *time.Time   `firestore:"endedAt,omitempty"`
 }
 
 const (

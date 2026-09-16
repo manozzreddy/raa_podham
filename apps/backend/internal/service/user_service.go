@@ -16,10 +16,12 @@ func NewUserService(rides repository.RideRepository) *UserService {
 	return &UserService{rides: rides}
 }
 
-// MyRides splits a user's rides into active and past.
+// MyRides splits a user's rides into active, upcoming (scheduled but not
+// yet started), and past.
 type MyRides struct {
-	Active []*model.Ride
-	Past   []*model.Ride
+	Active   []*model.Ride
+	Upcoming []*model.Ride
+	Past     []*model.Ride
 }
 
 func (s *UserService) ListMyRides(ctx context.Context, uid string) (*MyRides, error) {
@@ -30,9 +32,12 @@ func (s *UserService) ListMyRides(ctx context.Context, uid string) (*MyRides, er
 
 	result := &MyRides{}
 	for _, ride := range rides {
-		if ride.Status == model.RideStatusEnded {
+		switch ride.Status {
+		case model.RideStatusEnded:
 			result.Past = append(result.Past, ride)
-		} else {
+		case model.RideStatusScheduled:
+			result.Upcoming = append(result.Upcoming, ride)
+		default:
 			result.Active = append(result.Active, ride)
 		}
 	}

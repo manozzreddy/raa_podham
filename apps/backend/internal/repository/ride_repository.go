@@ -22,6 +22,8 @@ type RideRepository interface {
 	GetRideByInviteCode(ctx context.Context, code string) (*model.Ride, error)
 	AddMember(ctx context.Context, rideID string, member *model.Member) error
 	RemoveMember(ctx context.Context, rideID, uid string) error
+	StartRide(ctx context.Context, rideID string) error
 	EndRide(ctx context.Context, rideID string) error
+	DeleteRide(ctx context.Context, rideID, inviteCode string) error
 	ListRidesForUser(ctx context.Context, uid string) ([]*model.Ride, error)
 }

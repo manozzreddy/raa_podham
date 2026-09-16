@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
+import '../../../widgets/info_line.dart';
 import '../../../widgets/sheet_drag_handle.dart';
 import '../view_model/home_view_model.dart';
 import 'rider_avatar_chip.dart';
@@ -94,7 +95,7 @@ class RiderInfoSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 18),
-            _InfoLine(
+            InfoLine(
               icon: isCupertino
                   ? CupertinoIcons.location_solid
                   : Icons.social_distance,
@@ -103,7 +104,7 @@ class RiderInfoSheet extends StatelessWidget {
             ),
             if (details.distanceToDestinationLabel != null) ...[
               const SizedBox(height: 6),
-              _InfoLine(
+              InfoLine(
                 icon: isCupertino ? CupertinoIcons.flag_fill : Icons.flag,
                 label: details.distanceToDestinationLabel!,
                 style: captionStyle,
@@ -111,7 +112,7 @@ class RiderInfoSheet extends StatelessWidget {
             ],
             if (details.relativeToSelfLabel != null) ...[
               const SizedBox(height: 6),
-              _InfoLine(
+              InfoLine(
                 icon: isCupertino
                     ? CupertinoIcons.arrow_left_right
                     : Icons.compare_arrows,
@@ -203,27 +204,6 @@ class _HostChip extends StatelessWidget {
           letterSpacing: 0.4,
         ),
       ),
-    );
-  }
-}
-
-class _InfoLine extends StatelessWidget {
-  const _InfoLine({required this.icon, required this.label, this.style});
-
-  final IconData icon;
-  final String label;
-  final TextStyle? style;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: style?.color?.withValues(alpha: 0.7)),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
-        ),
-      ],
     );
   }
 }

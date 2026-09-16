@@ -16,6 +16,13 @@
          notification the app shows, the foreground service's persistent
          one included (see device_location.dart, which requests it). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Lets device_location.dart prompt for exemption from battery
+         optimization. Without it, several OEMs (MIUI, ColorOS,
+         FuntouchOS, and Samsung's own battery manager) kill the
+         foreground service in the background regardless of the
+         notification, so a rider's position stops reporting until they
+         reopen the app. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

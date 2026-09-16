@@ -7,13 +7,17 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'features/about/view/about_screen.dart';
 import 'features/auth/view/sign_in_screen.dart';
 import 'features/home/view/home_screen.dart';
+import 'features/location_permission/view/location_permission_screen.dart';
 import 'features/rides/models/ride.dart';
 import 'features/rides/view/create_ride_screen.dart';
 import 'features/rides/view/destination_search_screen.dart';
 import 'features/rides/view/join_ride_screen.dart';
+import 'features/rides/view/past_ride_detail_screen.dart';
+import 'features/rides/view/past_rides_screen.dart';
 import 'features/rides/view/share_invite_screen.dart';
 import 'features/settings/view/settings_screen.dart';
 import 'features/splash/view/splash_screen.dart';
+import 'services/permission_service.dart';
 import 'services/providers.dart';
 import 'services/theme_mode_repository.dart';
 import 'theme/theme.dart';
@@ -82,7 +86,7 @@ GoRouter appRouter(Ref ref) {
   return GoRouter(
     refreshListenable: refreshListenable,
     initialLocation: '/splash',
-    redirect: (context, state) {
+    redirect: (context, state) async {
       // SplashScreen picks its own destination once the launch animation
       // finishes and auth state resolves — the redirect would otherwise
       // bounce it straight to /sign-in before the animation ever plays.
@@ -93,6 +97,20 @@ GoRouter appRouter(Ref ref) {
 
       if (!isAuthed) return isSigningIn ? null : '/sign-in';
       if (isSigningIn) return '/home';
+
+      // The map is the whole app — nothing past sign-in works without a
+      // location, so every navigation (not just the first one) re-checks
+      // this and bounces back to the rationale screen until it's
+      // granted, rather than a one-time check that could go stale after
+      // a permission is revoked mid-session.
+      final isLocationPermissionScreen =
+          state.matchedLocation == '/location-permission';
+      if (!isLocationPermissionScreen) {
+        final isLocationGranted = await ref
+            .read(permissionServiceProvider)
+            .isLocationWhenInUseGranted();
+        if (!isLocationGranted) return '/location-permission';
+      }
       return null;
     },
     routes: [
@@ -103,6 +121,10 @@ GoRouter appRouter(Ref ref) {
       GoRoute(
         path: '/sign-in',
         builder: (context, state) => const SignInScreen(),
+      ),
+      GoRoute(
+        path: '/location-permission',
+        builder: (context, state) => const LocationPermissionScreen(),
       ),
       // The landing screen: it resolves the signed-in user's active ride
       // (or lack of one) itself, so no rideId/extra needs to travel
@@ -125,6 +147,15 @@ GoRouter appRouter(Ref ref) {
         path: '/rides/share-invite',
         builder: (context, state) =>
             ShareInviteScreen(ride: state.extra! as Ride),
+      ),
+      GoRoute(
+        path: '/rides/past',
+        builder: (context, state) => const PastRidesScreen(),
+      ),
+      GoRoute(
+        path: '/rides/past/detail',
+        builder: (context, state) =>
+            PastRideDetailScreen(ride: state.extra! as Ride),
       ),
       GoRoute(
         path: '/settings',

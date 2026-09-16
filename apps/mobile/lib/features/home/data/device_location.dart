@@ -1,9 +1,8 @@
 import 'dart:io' show Platform;
 
 import 'package:geolocator/geolocator.dart';
-// ServiceStatus exists in both packages; we mean geolocator's (location
-// services on/off), not permission_handler's.
-import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
+
+import '../../../services/permission_service.dart';
 
 /// Requests location permission (if needed) and returns the device's
 /// current position, or null if permission/location services aren't
@@ -11,11 +10,16 @@ import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
 ///
 /// Shared by [HomeViewModel] and [NoActiveRideViewModel] — both resolve
 /// the device's own position the same way, whether or not there's a ride
-/// to merge it with.
-Future<Position?> acquireCurrentPosition() async {
+/// to merge it with. Takes [permissionService] rather than reading
+/// `permission_handler` directly — [PermissionService] is the only class
+/// that should import that package, the same rule this codebase already
+/// applies to Firestore/dio in `data/` repositories.
+Future<Position?> acquireCurrentPosition({
+  required PermissionService permissionService,
+}) async {
   try {
-    final permission = await Permission.locationWhenInUse.request();
-    if (!permission.isGranted) return null;
+    final status = await permissionService.requestLocationWhenInUse();
+    if (status != LocationPermissionStatus.granted) return null;
     if (!await Geolocator.isLocationServiceEnabled()) return null;
     return await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
@@ -35,40 +39,54 @@ Future<Position?> acquireCurrentPosition() async {
 /// a second; a shared group map has no need for sub-5-second precision.
 const _minReportInterval = Duration(seconds: 5);
 
+/// Fixes worse than this (meters) are dropped rather than reported —
+/// typical of a degraded/network-only fix (poor GPS visibility, indoors,
+/// urban canyon) rather than the rider's real position. Reporting one
+/// would jump their marker to a wrong spot for the rest of the group, and
+/// since it'd likely differ from the last good fix by more than
+/// `distanceFilter`, it wouldn't otherwise get filtered out upstream.
+const _maxAcceptableAccuracy = 50.0;
+
 /// A live stream of the device's position while it changes, for
 /// [HomeViewModel] to report to a ride's RTDB positions node while it's
 /// active. Yields nothing (no error) if permission/location services
 /// aren't available — same fallback as [acquireCurrentPosition], so a
 /// caller can just listen without its own permission handling.
 ///
-/// Gated by *both* distance and time: `distanceFilter` (native, so the
-/// OS itself skips notifying Dart for jitter under 10m) and
+/// Gated by distance, time, and accuracy: `distanceFilter` (native, so
+/// the OS itself skips notifying Dart for jitter under 10m),
 /// [_minReportInterval] (Dart-side, since distanceFilter alone doesn't
-/// bound how often two 10m-apart updates can arrive).
+/// bound how often two 10m-apart updates can arrive), and
+/// [_maxAcceptableAccuracy] (Dart-side, dropping degraded fixes that
+/// would otherwise report a wrong position to the rest of the group).
 ///
 /// Runs as a foreground service (Android) / with background updates
 /// enabled (iOS) via [_platformLocationSettings], so this keeps
 /// reporting once the app is backgrounded — not just while it's the
 /// foreground activity, which is all a plain [LocationSettings] stream
-/// would otherwise manage. Requesting "always" below is what that
-/// actually depends on; a user who only grants "while in use" still
-/// gets everything working normally in the foreground, they just drop
-/// off the map for everyone else once they background the app.
-Stream<Position> watchCurrentPosition() async* {
+/// would otherwise manage. A granted "always" permission is what that
+/// actually depends on; a user who only has "while in use" still gets
+/// everything working normally in the foreground, they just drop off the
+/// map for everyone else once they background the app.
+///
+/// Doesn't request "always"/notification/battery-optimization itself —
+/// by the time this runs, [HomeViewModel] has already routed through
+/// [BackgroundSharingPermissionScreen], which is what asks for those
+/// (with an explanation) or the rider explicitly skipped it. Prompting
+/// again here would either double up the OS dialog right after they just
+/// answered it, or ask cold for someone who chose to skip.
+Stream<Position> watchCurrentPosition({
+  required PermissionService permissionService,
+}) async* {
   try {
-    await Permission.locationAlways.request();
-    // Android 13+ only — a no-op on iOS/older Android (permission_handler
-    // reports those as already granted). Without this the foreground
-    // service still runs, but its notification silently doesn't show, so
-    // a rider gets no indication background sharing is active.
-    await Permission.notification.request();
-    if (!await Permission.locationWhenInUse.isGranted) return;
+    if (!await permissionService.isLocationWhenInUseGranted()) return;
     if (!await Geolocator.isLocationServiceEnabled()) return;
 
     DateTime? lastReportedAt;
     await for (final position in Geolocator.getPositionStream(
       locationSettings: _platformLocationSettings(),
     )) {
+      if (position.accuracy > _maxAcceptableAccuracy) continue;
       final now = DateTime.now();
       if (lastReportedAt != null &&
           now.difference(lastReportedAt) < _minReportInterval) {
@@ -126,9 +144,10 @@ LocationSettings _platformLocationSettings() {
 /// toggle below, so this is meant to be (re-)checked at a natural point
 /// (screen build, coming back from Settings) rather than watched
 /// continuously.
-Future<bool> isLocationAvailable() async {
-  final permission = await Permission.locationWhenInUse.status;
-  if (!permission.isGranted) return false;
+Future<bool> isLocationAvailable({
+  required PermissionService permissionService,
+}) async {
+  if (!await permissionService.isLocationWhenInUseGranted()) return false;
   return Geolocator.isLocationServiceEnabled();
 }
 

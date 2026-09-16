@@ -6,6 +6,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:sheet/sheet.dart';
 
 import '../../../services/providers.dart';
 import '../../../theme/theme.dart';
@@ -17,6 +19,8 @@ import '../models/rider.dart';
 import '../view_model/home_view_model.dart';
 import '../view_model/no_active_ride_view_model.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/background_sharing_permission_screen.dart';
+import '../widgets/home_sheet_chrome.dart';
 import '../widgets/info_icon_button.dart';
 import '../widgets/map_fab_stack.dart';
 import '../widgets/map_top_icons.dart';
@@ -24,9 +28,23 @@ import '../widgets/no_ride_sheet.dart';
 import '../widgets/rider_avatar_chip.dart';
 import '../widgets/rider_info_sheet.dart';
 import '../widgets/rider_sheet.dart';
+import '../widgets/upcoming_ride_detail_sheet.dart';
 
-const double _sheetInitialSize = 0.24;
-const double _sheetMinSize = 0.24;
+/// The sheet's resting (and floor) extent while riding — smaller than
+/// [_noActiveRideSheetExtent] since the map itself, not the sheet,
+/// carries most of the attention during an active ride. Can't go much
+/// lower than this: [RiderSheet]'s fixed-height content (drag handle,
+/// header row, Invite/End-ride row) alone runs ~175 logical pixels, and
+/// below ~0.20 that no longer fits before its `Expanded` rider list even
+/// gets a look — see the RenderFlex overflow this hit at 0.16.
+const double _activeRideSheetExtent = 0.20;
+
+/// The sheet's resting (and floor) extent with no active ride — a bit
+/// larger than [_activeRideSheetExtent] so Create/Join ride and the
+/// upcoming-rides list read as this screen's main content, not an
+/// afterthought peeking up from the bottom.
+const double _noActiveRideSheetExtent = 0.35;
+
 const double _recenterZoom = 16;
 const double _autoFitPadding = 48;
 
@@ -73,11 +91,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final MapController _mapController = MapController();
-  final DraggableScrollableController _sheetController =
-      DraggableScrollableController();
-  late final ValueNotifier<double> _sheetExtent = ValueNotifier(
-    _sheetInitialSize,
-  );
+  final SheetController _sheetController = SheetController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   /// The rideId the initial all-riders camera fit has already been applied
@@ -86,18 +100,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _autoFitAppliedForRideId;
 
   @override
-  void initState() {
-    super.initState();
-    _sheetController.addListener(
-      () => _sheetExtent.value = _sheetController.size,
-    );
-  }
-
-  @override
   void dispose() {
     _mapController.dispose();
     _sheetController.dispose();
-    _sheetExtent.dispose();
     super.dispose();
   }
 
@@ -116,7 +121,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       data: (rides) {
         final activeRide = _findActiveRide(rides);
         if (activeRide != null) return _buildActiveRideHome(activeRide);
-        return _buildNoActiveRideHome();
+        return _buildNoActiveRideHome(rides);
       },
     );
   }
@@ -190,57 +195,74 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         message: "Couldn't load this ride.",
         onRetry: () => ref.invalidate(provider),
       ),
-      data: (state) => _MapHomeScaffold(
-        map: _RideMap(
-          mapController: _mapController,
-          rideId: state.rideId,
-          initialCenter: state.selfLocation,
-          destination: state.destination,
-          routePolyline: state.routePolyline,
-          selectedRiderUid: state.selectedRiderUid,
-          onSelectRider: viewModel.selectRider,
-          onShowInfo: viewModel.showRiderInfo,
-          onUserGesture: viewModel.onMapPanned,
-        ),
-        onProfileTap: () => context.push('/settings'),
-        selfPhotoUrl: ref.watch(authStateProvider).value?.photoURL,
-        scaffoldKey: _scaffoldKey,
-        maxSheetExtent: maxSheetExtent,
-        banner: state.isLocationUnavailable
-            ? _LocationDisabledBanner(onTurnOnTap: viewModel.openLocationSettings)
-            : null,
-        fabStack: MapFabStack(
-          isFollowingUser: state.isFollowingUser,
-          onRecenter: viewModel.recenter,
-        ),
-        sheetController: _sheetController,
-        sheetBuilder: (context, scrollController) => RiderSheet(
-          rideName: state.rideName,
-          destinationName: state.destination?.name,
-          routeSummary: state.routeSummary,
-          riders: state.riders,
-          isHost: state.isHost,
-          sheetExtent: _sheetExtent,
-          sheetController: _sheetController,
-          sheetMinExtent: _sheetMinSize,
-          sheetMaxExtent: maxSheetExtent,
-          scrollController: scrollController,
-          onInviteMore: viewModel.inviteMore,
-          onCta: () => _handleEndOrLeaveRide(viewModel, isHost: state.isHost),
-          onRiderTap: (riderId) {
-            viewModel.selectRider(riderId);
-            _focusOnRider(viewModel, riderId);
-          },
-          onShowInfo: viewModel.showRiderInfo,
-        ),
+      data: (state) {
+        if (state.showBackgroundSharingPrompt) {
+          return BackgroundSharingPermissionScreen(
+            onAllow: viewModel.allowBackgroundSharing,
+            onSkip: viewModel.skipBackgroundSharing,
+          );
+        }
+        return _buildMapScaffold(state, viewModel, maxSheetExtent);
+      },
+    );
+  }
+
+  Widget _buildMapScaffold(
+    HomeUiState state,
+    HomeViewModel viewModel,
+    double maxSheetExtent,
+  ) {
+    return _MapHomeScaffold(
+      map: _RideMap(
+        mapController: _mapController,
+        rideId: state.rideId,
+        initialCenter: state.selfLocation,
+        destination: state.destination,
+        routePolyline: state.routePolyline,
+        selectedRiderUid: state.selectedRiderUid,
+        onSelectRider: viewModel.selectRider,
+        onShowInfo: viewModel.showRiderInfo,
+        onUserGesture: viewModel.onMapPanned,
+      ),
+      onProfileTap: () => context.push('/settings'),
+      selfPhotoUrl: ref.watch(authStateProvider).value?.photoURL,
+      scaffoldKey: _scaffoldKey,
+      sheetRestExtent: _activeRideSheetExtent,
+      maxSheetExtent: maxSheetExtent,
+      banner: state.isLocationUnavailable
+          ? _LocationDisabledBanner(onTurnOnTap: viewModel.openLocationSettings)
+          : null,
+      fabStack: MapFabStack(
+        isFollowingUser: state.isFollowingUser,
+        onRecenter: viewModel.recenter,
+      ),
+      sheetController: _sheetController,
+      sheet: RiderSheet(
+        rideName: state.rideName,
+        destinationName: state.destination?.name,
+        routeSummary: state.routeSummary,
+        riders: state.riders,
+        isHost: state.isHost,
+        sheetExtent: _sheetController.animation,
+        onInviteMore: viewModel.inviteMore,
+        onCta: () => _handleEndOrLeaveRide(viewModel, isHost: state.isHost),
+        onRiderTap: (riderId) {
+          viewModel.selectRider(riderId);
+          _focusOnRider(viewModel, riderId);
+        },
+        onShowInfo: viewModel.showRiderInfo,
       ),
     );
   }
 
-  Widget _buildNoActiveRideHome() {
+  Widget _buildNoActiveRideHome(List<Ride> rides) {
     final stateAsync = ref.watch(noActiveRideViewModelProvider);
     final viewModel = ref.read(noActiveRideViewModelProvider.notifier);
     final maxSheetExtent = _maxSheetExtentFor(context);
+    final upcomingRides = rides
+        .where((ride) => ride.status == RideStatus.scheduled)
+        .toList(growable: false);
+    final currentUserId = ref.watch(authStateProvider).value?.uid;
 
     ref.listen<AsyncValue<NoActiveRideUiState>>(noActiveRideViewModelProvider, (
       previous,
@@ -271,22 +293,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onProfileTap: () => context.push('/settings'),
         selfPhotoUrl: ref.watch(authStateProvider).value?.photoURL,
         scaffoldKey: _scaffoldKey,
+        sheetRestExtent: _noActiveRideSheetExtent,
         maxSheetExtent: maxSheetExtent,
         fabStack: MapFabStack(
           isFollowingUser: state.isFollowingUser,
           onRecenter: viewModel.recenter,
         ),
         sheetController: _sheetController,
-        sheetBuilder: (context, scrollController) => NoRideSheet(
-          sheetController: _sheetController,
-          sheetMinExtent: _sheetMinSize,
-          sheetMaxExtent: maxSheetExtent,
+        sheet: NoRideSheet(
           // push, not go: these are sibling top-level routes, so `go`
           // would tear /home out of the stack entirely instead of
           // stacking on top of it — no back button, no swipe-back, no
           // way back if the user changes their mind mid-form.
           onCreateRide: () => context.push('/rides/create'),
           onJoinRide: () => context.push('/rides/join'),
+          upcomingRides: upcomingRides,
+          currentUserId: currentUserId,
+          onRideTap: (ride) => unawaited(_showUpcomingRideDetail(ride, currentUserId)),
+          onStartRide: _handleStartRide,
         ),
       ),
     );
@@ -395,6 +419,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     ref.invalidate(ridesViewModelProvider);
+  }
+
+  /// Presents [UpcomingRideDetailSheet] for [ride] — same
+  /// `showModalBottomSheet` pattern as the Rider Info modal, but there's
+  /// no per-ride ViewModel to read `isHost`/wire actions through here
+  /// (unlike [HomeViewModel], which only exists for the *active* ride),
+  /// so this screen computes/handles everything directly.
+  Future<void> _showUpcomingRideDetail(Ride ride, String? currentUserId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => UpcomingRideDetailSheet(
+        ride: ride,
+        isHost: ride.hostId == currentUserId,
+        onStartRide: () => _handleStartRide(ride),
+        onInviteMore: () => _shareInvite(ride),
+      ),
+    );
+  }
+
+  /// The host's "start now" action, from either the upcoming-ride card or
+  /// its detail sheet. [RidesViewModel.startRideNow] already refreshes
+  /// the rides list on success, so [HomeScreen] re-resolves to the map on
+  /// its own — no explicit navigation needed, same as ending/leaving a
+  /// ride.
+  Future<void> _handleStartRide(Ride ride) async {
+    final succeeded = await ref
+        .read(ridesViewModelProvider.notifier)
+        .startRideNow(ride.id);
+    if (succeeded || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Couldn't start the ride. Try again.")),
+    );
+  }
+
+  Future<void> _shareInvite(Ride ride) async {
+    await SharePlus.instance.share(
+      ShareParams(
+        text: buildInviteMessage(ride),
+        subject: 'Join my ride on Raa Podham',
+      ),
+    );
   }
 }
 
@@ -525,8 +591,9 @@ class _MapHomeScaffold extends StatelessWidget {
     required this.scaffoldKey,
     required this.fabStack,
     required this.sheetController,
+    required this.sheetRestExtent,
     required this.maxSheetExtent,
-    required this.sheetBuilder,
+    required this.sheet,
     this.banner,
   });
 
@@ -543,14 +610,19 @@ class _MapHomeScaffold extends StatelessWidget {
   /// through [openCupertinoAppMenu] instead, which needs no key.
   final GlobalKey<ScaffoldState> scaffoldKey;
   final Widget fabStack;
-  final DraggableScrollableController sheetController;
+  final SheetController sheetController;
+
+  /// The sheet's collapsed/resting fraction — [_activeRideSheetExtent]
+  /// or [_noActiveRideSheetExtent] depending on which state this is.
+  final double sheetRestExtent;
 
   /// See [_maxSheetExtentFor] — how far up the sheet can be dragged.
   final double maxSheetExtent;
-  final ScrollableWidgetBuilder sheetBuilder;
+  final Widget sheet;
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
     final content = Stack(
       children: [
         Positioned.fill(child: map),
@@ -579,17 +651,28 @@ class _MapHomeScaffold extends StatelessWidget {
         ),
         Positioned(
           right: 16,
-          bottom: MediaQuery.sizeOf(context).height * _sheetInitialSize + 16,
+          bottom: screenHeight * sheetRestExtent + 16,
           child: fabStack,
         ),
-        DraggableScrollableSheet(
-          controller: sheetController,
-          initialChildSize: _sheetInitialSize,
-          minChildSize: _sheetMinSize,
-          maxChildSize: maxSheetExtent,
-          snap: true,
-          snapSizes: [_sheetInitialSize, maxSheetExtent],
-          builder: sheetBuilder,
+        Positioned.fill(
+          child: Sheet(
+            controller: sheetController,
+            initialExtent: sheetRestExtent * screenHeight,
+            minExtent: sheetRestExtent * screenHeight,
+            maxExtent: maxSheetExtent * screenHeight,
+            fit: SheetFit.expand,
+            resizable: true,
+            minResizableExtent: sheetRestExtent * screenHeight,
+            // Only two rest positions — collapsed and (almost) fully
+            // open, same as the old snapSizes: [initial, max] — so this
+            // is a toggle between them, not freeform stops in between.
+            // Shared with every scrollable inside [sheet] itself — see
+            // homeSheetSnapPhysics's own doc comment for why.
+            physics: homeSheetSnapPhysics,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: sheet,
+          ),
         ),
       ],
     );

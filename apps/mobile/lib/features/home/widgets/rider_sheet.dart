@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
-import '../../../widgets/sheet_drag_area.dart';
 import '../../../widgets/sheet_drag_handle.dart';
 import '../view_model/home_view_model.dart';
 import 'home_sheet_chrome.dart';
@@ -11,8 +10,9 @@ import 'info_icon_button.dart';
 import 'rider_avatar_chip.dart';
 import 'sheet_action_button.dart';
 
-/// Sheet fractional extent past which the rider section switches from its
-/// collapsed chip row to the full vertical rider list.
+/// Normalized sheet position (0 at [HomeScreen]'s min extent, 1 at its
+/// max) past which the rider section switches from its collapsed chip
+/// row to the full vertical rider list.
 const double _sheetExpandedThreshold = 0.5;
 
 /// The draggable rider sheet's content: header, a persistent action row
@@ -30,10 +30,6 @@ class RiderSheet extends StatelessWidget {
     required this.riders,
     required this.isHost,
     required this.sheetExtent,
-    required this.sheetController,
-    required this.sheetMinExtent,
-    required this.sheetMaxExtent,
-    required this.scrollController,
     required this.onInviteMore,
     required this.onCta,
     required this.onRiderTap,
@@ -51,10 +47,6 @@ class RiderSheet extends StatelessWidget {
   final List<RiderVm> riders;
   final bool isHost;
   final ValueListenable<double> sheetExtent;
-  final DraggableScrollableController sheetController;
-  final double sheetMinExtent;
-  final double sheetMaxExtent;
-  final ScrollController scrollController;
   final VoidCallback onInviteMore;
   final VoidCallback onCta;
 
@@ -74,23 +66,14 @@ class RiderSheet extends StatelessWidget {
     return HomeSheetContainer(
       child: Column(
         children: [
-          SheetDragArea(
-            controller: sheetController,
-            minExtent: sheetMinExtent,
-            maxExtent: sheetMaxExtent,
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                const SheetDragHandle(),
-                const SizedBox(height: 12),
-                _HeaderRow(
-                  riderCount: riders.length,
-                  rideName: rideName,
-                  destinationName: destinationName,
-                  routeSummary: routeSummary,
-                ),
-              ],
-            ),
+          const SizedBox(height: 8),
+          const SheetDragHandle(),
+          const SizedBox(height: 12),
+          _HeaderRow(
+            riderCount: riders.length,
+            rideName: rideName,
+            destinationName: destinationName,
+            routeSummary: routeSummary,
           ),
           const SizedBox(height: 16),
           Padding(
@@ -132,14 +115,12 @@ class RiderSheet extends StatelessWidget {
                       ? _RiderDetailList(
                           key: const ValueKey('expanded'),
                           riders: riders,
-                          scrollController: scrollController,
                           onRiderTap: onRiderTap,
                           onShowInfo: onShowInfo,
                         )
                       : _CollapsedContent(
                           key: const ValueKey('collapsed'),
                           riders: riders,
-                          scrollController: scrollController,
                           onRiderTap: onRiderTap,
                         ),
                 );
@@ -236,18 +217,17 @@ class _CollapsedContent extends StatelessWidget {
   const _CollapsedContent({
     super.key,
     required this.riders,
-    required this.scrollController,
     required this.onRiderTap,
   });
 
   final List<RiderVm> riders;
-  final ScrollController scrollController;
   final ValueChanged<String> onRiderTap;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      controller: scrollController,
+      primary: true,
+      physics: homeSheetSnapPhysics,
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: _RiderChipRow(riders: riders, onRiderTap: onRiderTap),
     );
@@ -290,20 +270,19 @@ class _RiderDetailList extends StatelessWidget {
   const _RiderDetailList({
     super.key,
     required this.riders,
-    required this.scrollController,
     required this.onRiderTap,
     required this.onShowInfo,
   });
 
   final List<RiderVm> riders;
-  final ScrollController scrollController;
   final ValueChanged<String> onRiderTap;
   final ValueChanged<String> onShowInfo;
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      controller: scrollController,
+      primary: true,
+      physics: homeSheetSnapPhysics,
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       itemCount: riders.length,
       separatorBuilder: (context, index) => const SizedBox.shrink(),

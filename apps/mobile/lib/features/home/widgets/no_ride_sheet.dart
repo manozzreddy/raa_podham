@@ -2,30 +2,42 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
-import '../../../widgets/sheet_drag_area.dart';
 import '../../../widgets/sheet_drag_handle.dart';
+import '../../rides/models/ride.dart';
 import 'home_sheet_chrome.dart';
 import 'sheet_action_button.dart';
+import 'upcoming_ride_card.dart';
 
 /// The draggable sheet's content when the signed-in user isn't currently
 /// in a ride: a persistent action row (Create / Join — always visible,
-/// same pattern [RiderSheet] uses for its own actions) and nothing else
-/// — no past-rides list, per product direction.
+/// same pattern [RiderSheet] uses for its own actions), then either the
+/// empty-state placeholder or a card per [upcomingRides] — still no
+/// *past*-rides list, per product direction, but a scheduled ride the
+/// user hosts or has joined is exactly what this sheet is for.
 class NoRideSheet extends StatelessWidget {
   const NoRideSheet({
     super.key,
-    required this.sheetController,
-    required this.sheetMinExtent,
-    required this.sheetMaxExtent,
     required this.onCreateRide,
     required this.onJoinRide,
+    required this.upcomingRides,
+    required this.currentUserId,
+    required this.onRideTap,
+    required this.onStartRide,
   });
 
-  final DraggableScrollableController sheetController;
-  final double sheetMinExtent;
-  final double sheetMaxExtent;
   final VoidCallback onCreateRide;
   final VoidCallback onJoinRide;
+
+  /// Rides with [RideStatus.scheduled] the user hosts or has joined —
+  /// already filtered by `HomeScreen`, which is the one watching the
+  /// rides list.
+  final List<Ride> upcomingRides;
+
+  /// Null while auth state is still resolving — no card's Start Now
+  /// button should render as host-enabled until this is known.
+  final String? currentUserId;
+  final ValueChanged<Ride> onRideTap;
+  final ValueChanged<Ride> onStartRide;
 
   @override
   Widget build(BuildContext context) {
@@ -41,22 +53,13 @@ class NoRideSheet extends StatelessWidget {
     return HomeSheetContainer(
       child: Column(
         children: [
-          SheetDragArea(
-            controller: sheetController,
-            minExtent: sheetMinExtent,
-            maxExtent: sheetMaxExtent,
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                const SheetDragHandle(),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [Text('Start riding', style: headerStyle)],
-                  ),
-                ),
-              ],
+          const SizedBox(height: 8),
+          const SheetDragHandle(),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [Text('Start riding', style: headerStyle)],
             ),
           ),
           const SizedBox(height: 16),
@@ -83,21 +86,73 @@ class NoRideSheet extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  "You're not in a ride yet. Create one or join with an invite code.",
-                  textAlign: TextAlign.center,
-                  style: bodyStyle?.copyWith(
-                    color: bodyStyle.color?.withValues(alpha: 0.7),
+            child: upcomingRides.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Text(
+                        "You're not in a ride yet. Create one or join with an invite code.",
+                        textAlign: TextAlign.center,
+                        style: bodyStyle?.copyWith(
+                          color: bodyStyle.color?.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  )
+                : _UpcomingRidesList(
+                    rides: upcomingRides,
+                    currentUserId: currentUserId,
+                    onRideTap: onRideTap,
+                    onStartRide: onStartRide,
                   ),
-                ),
-              ),
-            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _UpcomingRidesList extends StatelessWidget {
+  const _UpcomingRidesList({
+    required this.rides,
+    required this.currentUserId,
+    required this.onRideTap,
+    required this.onStartRide,
+  });
+
+  final List<Ride> rides;
+  final String? currentUserId;
+  final ValueChanged<Ride> onRideTap;
+  final ValueChanged<Ride> onStartRide;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = isCupertino
+        ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
+        : Theme.of(context).textTheme.labelLarge;
+
+    return ListView(
+      primary: true,
+      physics: homeSheetSnapPhysics,
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      children: [
+        Text(
+          'UPCOMING',
+          style: labelStyle?.copyWith(
+            color: labelStyle.color?.withValues(alpha: 0.6),
+          ),
+        ),
+        const SizedBox(height: 10),
+        for (final ride in rides) ...[
+          UpcomingRideCard(
+            ride: ride,
+            isHost: ride.hostId == currentUserId,
+            onTap: () => onRideTap(ride),
+            onStartRide: () => onStartRide(ride),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ],
     );
   }
 }

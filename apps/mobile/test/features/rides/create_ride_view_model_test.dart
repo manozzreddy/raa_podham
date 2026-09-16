@@ -41,13 +41,18 @@ class _FakeRideRepository implements RideRepository {
   Future<Ride> createRide({
     required String name,
     DestinationSuggestion? destination,
+    DateTime? scheduledAt,
+    String? notes,
+    String? coverPhotoUrl,
   }) async {
     return Ride(
       id: 'fake-ride-1',
       name: name,
       inviteCode: 'FAKE01',
       hostId: 'fake-host-uid',
-      status: RideStatus.active,
+      status: scheduledAt != null && scheduledAt.isAfter(DateTime.now())
+          ? RideStatus.scheduled
+          : RideStatus.active,
       destination: destination == null
           ? null
           : RideDestination(
@@ -55,6 +60,10 @@ class _FakeRideRepository implements RideRepository {
               lat: destination.lat,
               lng: destination.lng,
             ),
+      scheduledAt: scheduledAt,
+      notes: notes,
+      coverPhotoUrl: coverPhotoUrl,
+      createdAt: DateTime.now(),
     );
   }
 
@@ -68,11 +77,17 @@ class _FakeRideRepository implements RideRepository {
   Future<void> endRide(String rideId) => throw UnimplementedError();
 
   @override
+  Future<void> deleteRide(String rideId) => throw UnimplementedError();
+
+  @override
   Future<void> removeMember(String rideId, String memberUid) =>
       throw UnimplementedError();
 
   @override
   Future<List<Ride>> myRides() => throw UnimplementedError();
+
+  @override
+  Future<void> startRideNow(String rideId) => throw UnimplementedError();
 }
 
 const _destination = DestinationSuggestion(
@@ -140,4 +155,32 @@ void main() {
       expect(container.read(createRideViewModelProvider).isCreating, isFalse);
     },
   );
+
+  test('setNotes and setScheduledAt are reflected in state and passed through to createRide', () async {
+    final notifier = container.read(createRideViewModelProvider.notifier);
+    final scheduledAt = DateTime.now().add(const Duration(days: 1));
+    notifier.setName('Sunday Sunrise Ride');
+    notifier.selectDestination(_destination);
+    notifier.setNotes('Bring rain gear');
+    notifier.setScheduledAt(scheduledAt);
+
+    expect(container.read(createRideViewModelProvider).notes, 'Bring rain gear');
+    expect(container.read(createRideViewModelProvider).scheduledAt, scheduledAt);
+
+    final ride = await notifier.createRide();
+
+    expect(ride, isNotNull);
+    expect(ride!.notes, 'Bring rain gear');
+    expect(ride.scheduledAt, scheduledAt);
+    expect(ride.status, RideStatus.scheduled);
+  });
+
+  test('setScheduledAt(null) clears a previously picked time', () {
+    final notifier = container.read(createRideViewModelProvider.notifier);
+    notifier.setScheduledAt(DateTime.now().add(const Duration(days: 1)));
+
+    notifier.setScheduledAt(null);
+
+    expect(container.read(createRideViewModelProvider).scheduledAt, isNull);
+  });
 }

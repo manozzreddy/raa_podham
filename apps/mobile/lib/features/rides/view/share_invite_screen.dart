@@ -47,13 +47,13 @@ class ShareInviteScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                '${ride.name} is live',
+                _headline(ride),
                 textAlign: TextAlign.center,
                 style: titleStyle,
               ),
               const SizedBox(height: 8),
               Text(
-                "Share this so riders can find you. It's the only way in.",
+                _subtitle(ride),
                 textAlign: TextAlign.center,
                 style: bodyStyle?.copyWith(
                   color: bodyStyle.color?.withValues(alpha: 0.7),
@@ -105,6 +105,26 @@ class ShareInviteScreen extends StatelessWidget {
   // never be back-navigable to once you've landed on the ride — there's
   // nothing to come back and redo.
   void _goHome(BuildContext context) => context.go('/home');
+}
+
+/// "is live" only for a ride that's actually active right now — a
+/// scheduled one says so instead, so this screen never contradicts the
+/// ride's real status right after creating it (see `RideService.CreateRide`,
+/// which only sets it active immediately when no future time was picked).
+String _headline(Ride ride) {
+  final scheduledAt = ride.scheduledAt;
+  if (ride.status == RideStatus.scheduled && scheduledAt != null) {
+    return '${ride.name} is set for ${formatScheduledTime(scheduledAt)}';
+  }
+  return '${ride.name} is live';
+}
+
+String _subtitle(Ride ride) {
+  if (ride.status == RideStatus.scheduled) {
+    return "Share this now so riders have the code before it starts. "
+        "You can start it early anytime from the home screen.";
+  }
+  return "Share this so riders can find you. It's the only way in.";
 }
 
 class _InviteCodeChip extends StatelessWidget {

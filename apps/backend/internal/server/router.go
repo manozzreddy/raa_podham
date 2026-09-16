@@ -41,9 +41,11 @@ func NewRouter(h Handlers, authClient *auth.Client) http.Handler {
 
 		r.Post("/rides", h.Ride.CreateRide)
 		r.Post("/rides/join", h.Ride.JoinRide)
+		r.Post("/rides/{id}/start", h.Ride.StartRide)
 		r.Post("/rides/{id}/leave", h.Ride.LeaveRide)
 		r.Post("/rides/{id}/end", h.Ride.EndRide)
 		r.Post("/rides/{id}/members/{uid}/remove", h.Ride.RemoveMember)
+		r.Delete("/rides/{id}", h.Ride.DeleteRide)
 		r.Get("/users/me/rides", h.User.ListMyRides)
 
 		// Behind auth like everything else here, deliberately: these

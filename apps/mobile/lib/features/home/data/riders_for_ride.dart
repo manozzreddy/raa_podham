@@ -1,11 +1,11 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:rxdart/rxdart.dart';
 
+import '../../../services/membership_repository.dart';
 import '../../../services/providers.dart';
 import '../models/rider.dart';
 import '../models/rider_position.dart';
 import '../models/rider_profile.dart';
-import 'membership_repository.dart';
 import 'position_repository.dart';
 
 part 'riders_for_ride.g.dart';

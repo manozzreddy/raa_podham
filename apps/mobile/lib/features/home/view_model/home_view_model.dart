@@ -9,6 +9,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../services/permission_service.dart';
 import '../../../services/providers.dart';
 import '../../../services/routes_repository.dart';
 import '../../rides/data/ride_repository.dart';
@@ -36,6 +37,7 @@ class HomeUiState {
     required this.selfLocation,
     required this.isFollowingUser,
     required this.isLocationUnavailable,
+    required this.showBackgroundSharingPrompt,
     required this.routePolyline,
     required this.routeSummary,
     required this.selectedRiderUid,
@@ -69,6 +71,15 @@ class HomeUiState {
   /// this rider is invisible to the rest of the group right now. The
   /// View shows a banner prompting them to fix it when this is true.
   final bool isLocationUnavailable;
+
+  /// True while the background-sharing rationale (background location,
+  /// the foreground-service notification, battery-optimization
+  /// exemption) is waiting on the rider's Allow/Not now — see
+  /// [HomeViewModel.allowBackgroundSharing]/[skipBackgroundSharing]. The
+  /// View shows that explainer screen in place of the map while this is
+  /// true, exactly once per ride (it never flips back to true once
+  /// resolved).
+  final bool showBackgroundSharingPrompt;
 
   /// The route from self to the destination, decoded and ready to draw
   /// — empty until it resolves (no destination, self location not
@@ -192,6 +203,7 @@ class HomeViewModel extends _$HomeViewModel {
   LatLng _selfLocation = fallbackSelfLocation;
   bool _isFollowingUser = true;
   bool _isLocationUnavailable = false;
+  bool _showBackgroundSharingPrompt = false;
   RouteInfo? _route;
   List<Rider> _lastRiders = const [];
   String? _selectedRiderUid;
@@ -212,7 +224,7 @@ class HomeViewModel extends _$HomeViewModel {
     }
     if (!_hasStartedPositionReporting) {
       _hasStartedPositionReporting = true;
-      _startReportingPosition();
+      unawaited(_resolvePositionReporting());
       _armDisconnectCleanup();
       unawaited(_checkInitialLocationAvailability());
       _locationServiceSubscription = watchLocationServicesEnabled().listen((
@@ -245,17 +257,74 @@ class HomeViewModel extends _$HomeViewModel {
     return _currentState(riders);
   }
 
+  /// Starts reporting immediately if background-sharing permissions are
+  /// already settled from an earlier ride, otherwise shows the
+  /// explainer first (via [showBackgroundSharingPrompt] in
+  /// [HomeUiState]) and waits for [allowBackgroundSharing] or
+  /// [skipBackgroundSharing] to actually start it.
+  Future<void> _resolvePositionReporting() async {
+    final isSatisfied = await ref
+        .read(permissionServiceProvider)
+        .isBackgroundSharingSatisfied();
+    // Guards every method below with an async gap before it touches
+    // `ref`/`_publish()` again — the ride could have ended (or this
+    // screen been navigated away from) while the await above was
+    // pending, disposing this auto-dispose provider, and touching `ref`
+    // after that throws UnmountedRefException.
+    if (!ref.mounted) return;
+    if (isSatisfied) {
+      _startReportingPosition();
+      return;
+    }
+    _showBackgroundSharingPrompt = true;
+    _publish();
+  }
+
+  /// The background-sharing explainer's Allow action: requests
+  /// background location, the foreground-service notification, and the
+  /// battery-optimization exemption, then starts reporting regardless of
+  /// which of those were actually granted — none of them are required,
+  /// only nice to have (see `device_location.dart`'s watchCurrentPosition).
+  Future<void> allowBackgroundSharing() async {
+    await ref.read(permissionServiceProvider).requestBackgroundSharing();
+    // See _resolvePositionReporting's own comment — same guard, same reason.
+    if (!ref.mounted) return;
+    _showBackgroundSharingPrompt = false;
+    _publish();
+    _startReportingPosition();
+  }
+
+  /// The background-sharing explainer's Not now action: starts reporting
+  /// straight away, the same foreground-only fallback a decline on any
+  /// of those permissions would already leave a rider in.
+  void skipBackgroundSharing() {
+    _showBackgroundSharingPrompt = false;
+    _publish();
+    _startReportingPosition();
+  }
+
   void _startReportingPosition() {
     final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
     if (uid == null) return;
     final positions = ref.read(positionRepositoryProvider);
     debugPrint('position stream started for ride ${_ride.id}, uid $uid');
-    _positionReportSubscription = watchCurrentPosition().listen(
+    _positionReportSubscription = watchCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    ).listen(
       (position) {
         debugPrint(
           'reportPosition: ride ${_ride.id} uid $uid '
           '(${position.latitude}, ${position.longitude})',
         );
+        // Other riders' markers already read straight from RTDB
+        // (ridersForRideProvider), but this device's own camera-follow
+        // target and the distances shown *to* other riders both key off
+        // _selfLocation — without refreshing it here, both go stale
+        // after the first fix (recenter() is otherwise the only thing
+        // that ever touches it again).
+        _selfLocation = LatLng(position.latitude, position.longitude);
+        _hasResolvedSelfLocation = true;
+        _publish();
         // Each emission fires its own write; a rejected/failed one must
         // not take down this subscription (an uncaught Future error here
         // would otherwise propagate to the zone) or silently vanish — a
@@ -311,7 +380,11 @@ class HomeViewModel extends _$HomeViewModel {
   }
 
   Future<void> _checkInitialLocationAvailability() async {
-    final available = await isLocationAvailable();
+    final available = await isLocationAvailable(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // See _resolvePositionReporting's own comment — same guard, same reason.
+    if (!ref.mounted) return;
     _isLocationUnavailable = !available;
     _publish();
   }
@@ -325,7 +398,11 @@ class HomeViewModel extends _$HomeViewModel {
   /// Re-acquires the device's location, recenters on it, and marks the
   /// map as following the user again.
   Future<void> recenter() async {
-    final position = await acquireCurrentPosition();
+    final position = await acquireCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // See _resolvePositionReporting's own comment — same guard, same reason.
+    if (!ref.mounted) return;
     if (position == null) return;
     _selfLocation = LatLng(position.latitude, position.longitude);
     _hasResolvedSelfLocation = true;
@@ -583,7 +660,11 @@ class HomeViewModel extends _$HomeViewModel {
   }
 
   Future<void> _resolveInitialLocation() async {
-    final position = await acquireCurrentPosition();
+    final position = await acquireCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // See _resolvePositionReporting's own comment — same guard, same reason.
+    if (!ref.mounted) return;
     if (position == null) return;
     _selfLocation = LatLng(position.latitude, position.longitude);
     _hasResolvedSelfLocation = true;
@@ -609,6 +690,10 @@ class HomeViewModel extends _$HomeViewModel {
             origin: _selfLocation,
             destination: LatLng(destination.lat, destination.lng),
           );
+      // See _resolvePositionReporting's own comment — same guard, same
+      // reason: the await above is an async gap this provider could have
+      // been disposed during.
+      if (!ref.mounted) return;
       _route = route;
       _publish();
     } catch (error) {
@@ -651,6 +736,7 @@ class HomeViewModel extends _$HomeViewModel {
       selfLocation: _selfLocation,
       isFollowingUser: _isFollowingUser,
       isLocationUnavailable: _isLocationUnavailable,
+      showBackgroundSharingPrompt: _showBackgroundSharingPrompt,
       routePolyline: _route?.points ?? const [],
       routeSummary: _route == null ? null : _formatRouteSummary(_route!),
       selectedRiderUid: _selectedRiderUid,

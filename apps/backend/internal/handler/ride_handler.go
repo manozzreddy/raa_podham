@@ -46,13 +46,35 @@ func (h *RideHandler) CreateRide(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ride, err := h.rides.CreateRide(r.Context(), uid, req.Name, destination)
+	ride, err := h.rides.CreateRide(r.Context(), uid, service.CreateRideInput{
+		Name:          req.Name,
+		Destination:   destination,
+		ScheduledAt:   req.ScheduledAt,
+		Notes:         req.Notes,
+		CoverPhotoURL: req.CoverPhotoURL,
+	})
 	if err != nil {
 		respondError(w, err)
 		return
 	}
 
 	respondJSON(w, http.StatusCreated, dto.FromRide(ride))
+}
+
+func (h *RideHandler) StartRide(w http.ResponseWriter, r *http.Request) {
+	uid, ok := middleware.UIDFromContext(r.Context())
+	if !ok {
+		respondError(w, apperror.Forbidden("missing authenticated user"))
+		return
+	}
+
+	rideID := chi.URLParam(r, "id")
+	if err := h.rides.StartRideNow(r.Context(), uid, rideID); err != nil {
+		respondError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *RideHandler) JoinRide(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +124,22 @@ func (h *RideHandler) EndRide(w http.ResponseWriter, r *http.Request) {
 
 	rideID := chi.URLParam(r, "id")
 	if err := h.rides.EndRide(r.Context(), uid, rideID); err != nil {
+		respondError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *RideHandler) DeleteRide(w http.ResponseWriter, r *http.Request) {
+	uid, ok := middleware.UIDFromContext(r.Context())
+	if !ok {
+		respondError(w, apperror.Forbidden("missing authenticated user"))
+		return
+	}
+
+	rideID := chi.URLParam(r, "id")
+	if err := h.rides.DeleteRide(r.Context(), uid, rideID); err != nil {
 		respondError(w, err)
 		return
 	}

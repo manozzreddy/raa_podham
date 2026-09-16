@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +78,15 @@ func (f *fakeRideRepository) RemoveMember(ctx context.Context, rideID, uid strin
 	return nil
 }
 
+func (f *fakeRideRepository) StartRide(ctx context.Context, rideID string) error {
+	ride, ok := f.rides[rideID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	ride.Status = model.RideStatusActive
+	return nil
+}
+
 func (f *fakeRideRepository) EndRide(ctx context.Context, rideID string) error {
 	ride, ok := f.rides[rideID]
 	if !ok {
@@ -85,6 +95,15 @@ func (f *fakeRideRepository) EndRide(ctx context.Context, rideID string) error {
 	ride.Status = model.RideStatusEnded
 	now := time.Now().UTC()
 	ride.EndedAt = &now
+	return nil
+}
+
+func (f *fakeRideRepository) DeleteRide(ctx context.Context, rideID, inviteCode string) error {
+	if _, ok := f.rides[rideID]; !ok {
+		return repository.ErrNotFound
+	}
+	delete(f.rides, rideID)
+	delete(f.inviteCodes, inviteCode)
 	return nil
 }
 
@@ -165,7 +184,7 @@ func TestRideService_CreateRide(t *testing.T) {
 	presence := newFakePresenceRepository()
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Sunday Sunrise Ride", nil)
+	ride, err := svc.CreateRide(context.Background(), "host-1", service.CreateRideInput{Name: "Sunday Sunrise Ride"})
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}
@@ -189,7 +208,10 @@ func TestRideService_CreateRide_WithDestination(t *testing.T) {
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
 	destination := &model.Destination{Name: "Cubbon Park", Lat: 12.9716, Lng: 77.5946}
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Sunday Sunrise Ride", destination)
+	ride, err := svc.CreateRide(context.Background(), "host-1", service.CreateRideInput{
+		Name:        "Sunday Sunrise Ride",
+		Destination: destination,
+	})
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}
@@ -198,6 +220,231 @@ func TestRideService_CreateRide_WithDestination(t *testing.T) {
 	}
 	if *ride.Destination != *destination {
 		t.Errorf("Destination = %+v, want %+v", ride.Destination, destination)
+	}
+}
+
+func TestRideService_CreateRide_Scheduled(t *testing.T) {
+	rides := newFakeRideRepository()
+	presence := newFakePresenceRepository()
+	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+
+	scheduledAt := time.Now().UTC().Add(24 * time.Hour)
+	ride, err := svc.CreateRide(context.Background(), "host-1", service.CreateRideInput{
+		Name:        "Next Sunday Ride",
+		ScheduledAt: &scheduledAt,
+	})
+	if err != nil {
+		t.Fatalf("CreateRide returned error: %v", err)
+	}
+	if ride.Status != model.RideStatusScheduled {
+		t.Errorf("Status = %q, want %q", ride.Status, model.RideStatusScheduled)
+	}
+	if presence.present[ride.ID]["host-1"] {
+		t.Errorf("expected host NOT to be marked present for a scheduled (not yet started) ride")
+	}
+}
+
+func TestRideService_CreateRide_Validation(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	tooFarAhead := time.Now().UTC().Add(2 * 365 * 24 * time.Hour)
+	tooLongNotes := strings.Repeat("a", 501)
+
+	tests := []struct {
+		name  string
+		input service.CreateRideInput
+	}{
+		{
+			name:  "scheduled time in the past",
+			input: service.CreateRideInput{Name: "Ride", ScheduledAt: &past},
+		},
+		{
+			name:  "scheduled time too far ahead",
+			input: service.CreateRideInput{Name: "Ride", ScheduledAt: &tooFarAhead},
+		},
+		{
+			name:  "notes too long",
+			input: service.CreateRideInput{Name: "Ride", Notes: tooLongNotes},
+		},
+		{
+			name:  "cover photo URL not from our Storage bucket",
+			input: service.CreateRideInput{Name: "Ride", CoverPhotoURL: "https://evil.example.com/x.jpg"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rides := newFakeRideRepository()
+			presence := newFakePresenceRepository()
+			svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+
+			_, err := svc.CreateRide(context.Background(), "host-1", tt.input)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if got := appErrorCode(t, err); got != "bad_request" {
+				t.Errorf("error code = %q, want %q", got, "bad_request")
+			}
+		})
+	}
+}
+
+func TestRideService_StartRideNow(t *testing.T) {
+	tests := []struct {
+		name      string
+		callerUID string
+		seed      *model.Ride
+		wantCode  string // "" means no error expected
+	}{
+		{
+			name:      "host starts a scheduled ride",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			wantCode: "",
+		},
+		{
+			name:      "non-host forbidden",
+			callerUID: "rider-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+				HostUID: "host-1", MemberUIDs: []string{"host-1", "rider-1"},
+			},
+			wantCode: "forbidden",
+		},
+		{
+			name:      "already active",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusActive,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			wantCode: "conflict",
+		},
+		{
+			name:      "already ended",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusEnded,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			wantCode: "gone",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rides := newFakeRideRepository()
+			presence := newFakePresenceRepository()
+			svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+			rides.seedRide(tt.seed)
+
+			err := svc.StartRideNow(context.Background(), tt.callerUID, "ride-1")
+			if tt.wantCode == "" {
+				if err != nil {
+					t.Fatalf("StartRideNow returned error: %v", err)
+				}
+				got, getErr := rides.GetRideByID(context.Background(), "ride-1")
+				if getErr != nil {
+					t.Fatalf("GetRideByID returned error: %v", getErr)
+				}
+				if got.Status != model.RideStatusActive {
+					t.Errorf("Status = %q, want %q", got.Status, model.RideStatusActive)
+				}
+				if !presence.present["ride-1"]["host-1"] {
+					t.Errorf("expected host to be marked present after starting the ride")
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if got := appErrorCode(t, err); got != tt.wantCode {
+				t.Errorf("error code = %q, want %q", got, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestRideService_DeleteRide(t *testing.T) {
+	tests := []struct {
+		name      string
+		callerUID string
+		seed      *model.Ride
+		wantCode  string // "" means no error expected
+	}{
+		{
+			name:      "host deletes an ended ride",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusEnded,
+				HostUID: "host-1", MemberUIDs: []string{"host-1", "rider-1"},
+			},
+			wantCode: "",
+		},
+		{
+			name:      "non-host forbidden",
+			callerUID: "rider-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusEnded,
+				HostUID: "host-1", MemberUIDs: []string{"host-1", "rider-1"},
+			},
+			wantCode: "forbidden",
+		},
+		{
+			name:      "still active",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusActive,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			wantCode: "conflict",
+		},
+		{
+			name:      "still scheduled",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			wantCode: "conflict",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rides := newFakeRideRepository()
+			presence := newFakePresenceRepository()
+			svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+			rides.seedRide(tt.seed)
+
+			err := svc.DeleteRide(context.Background(), tt.callerUID, "ride-1")
+			if tt.wantCode == "" {
+				if err != nil {
+					t.Fatalf("DeleteRide returned error: %v", err)
+				}
+				if _, getErr := rides.GetRideByID(context.Background(), "ride-1"); !errors.Is(getErr, repository.ErrNotFound) {
+					t.Errorf("expected ride-1 to be gone, GetRideByID returned: %v", getErr)
+				}
+				if _, getErr := rides.GetRideByInviteCode(context.Background(), "CODE01"); !errors.Is(getErr, repository.ErrNotFound) {
+					t.Errorf("expected invite code CODE01 to be gone, GetRideByInviteCode returned: %v", getErr)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if got := appErrorCode(t, err); got != tt.wantCode {
+				t.Errorf("error code = %q, want %q", got, tt.wantCode)
+			}
+			// A rejected delete must leave the ride untouched.
+			if _, getErr := rides.GetRideByID(context.Background(), "ride-1"); getErr != nil {
+				t.Errorf("expected ride-1 to still exist after a rejected delete, GetRideByID returned: %v", getErr)
+			}
+		})
 	}
 }
 
@@ -272,7 +519,7 @@ func TestRideService_LeaveRide_HostEndsRide(t *testing.T) {
 	presence := newFakePresenceRepository()
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Test Ride", nil)
+	ride, err := svc.CreateRide(context.Background(), "host-1", service.CreateRideInput{Name: "Test Ride"})
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}
@@ -373,7 +620,7 @@ func TestRideService_EndRide_NonHostForbidden(t *testing.T) {
 	presence := newFakePresenceRepository()
 	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
 
-	ride, err := svc.CreateRide(context.Background(), "host-1", "Test Ride", nil)
+	ride, err := svc.CreateRide(context.Background(), "host-1", service.CreateRideInput{Name: "Test Ride"})
 	if err != nil {
 		t.Fatalf("CreateRide returned error: %v", err)
 	}

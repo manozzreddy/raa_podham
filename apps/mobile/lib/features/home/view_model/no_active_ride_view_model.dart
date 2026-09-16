@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../services/permission_service.dart';
 import '../data/device_location.dart';
 import 'home_view_model.dart' show fallbackSelfLocation;
 
@@ -45,7 +46,13 @@ class NoActiveRideViewModel extends _$NoActiveRideViewModel {
   /// Re-acquires the device's location, recenters on it, and marks the
   /// map as following the user again.
   Future<void> recenter() async {
-    final position = await acquireCurrentPosition();
+    final position = await acquireCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // The user could navigate away (e.g. into a ride) while the await
+    // above is pending, disposing this auto-dispose provider — touching
+    // `ref`/`state` after that throws UnmountedRefException.
+    if (!ref.mounted) return;
     if (position == null) return;
     _selfLocation = LatLng(position.latitude, position.longitude);
     _isFollowingUser = true;
@@ -61,7 +68,11 @@ class NoActiveRideViewModel extends _$NoActiveRideViewModel {
   }
 
   Future<void> _resolveInitialLocation() async {
-    final position = await acquireCurrentPosition();
+    final position = await acquireCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // See recenter's own comment — same guard, same reason.
+    if (!ref.mounted) return;
     if (position == null) return;
     _selfLocation = LatLng(position.latitude, position.longitude);
     _publish();

@@ -147,12 +147,46 @@ func (r *FirestoreRideRepository) RemoveMember(ctx context.Context, rideID, uid 
 	})
 }
 
+func (r *FirestoreRideRepository) StartRide(ctx context.Context, rideID string) error {
+	_, err := r.client.Collection(ridesCollection).Doc(rideID).Update(ctx, []firestore.Update{
+		{Path: "status", Value: model.RideStatusActive},
+	})
+	return err
+}
+
 func (r *FirestoreRideRepository) EndRide(ctx context.Context, rideID string) error {
 	_, err := r.client.Collection(ridesCollection).Doc(rideID).Update(ctx, []firestore.Update{
 		{Path: "status", Value: model.RideStatusEnded},
 		{Path: "endedAt", Value: firestore.ServerTimestamp},
 	})
 	return err
+}
+
+// DeleteRide permanently removes rides/{id}, every doc in its members
+// subcollection (Firestore doesn't cascade-delete those on its own), and
+// the inviteCodes/{code} lookup entry that points at it — all in one
+// transaction, so a failure partway through leaves nothing half-deleted.
+func (r *FirestoreRideRepository) DeleteRide(ctx context.Context, rideID, inviteCode string) error {
+	rideRef := r.client.Collection(ridesCollection).Doc(rideID)
+
+	// Reads must happen before any transaction writes below, so this
+	// listing runs as a plain (non-transactional) read first.
+	memberRefs, err := rideRef.Collection(membersSubcollection).DocumentRefs(ctx).GetAll()
+	if err != nil {
+		return err
+	}
+
+	return r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		for _, memberRef := range memberRefs {
+			if err := tx.Delete(memberRef); err != nil {
+				return err
+			}
+		}
+		if err := tx.Delete(rideRef); err != nil {
+			return err
+		}
+		return tx.Delete(r.client.Collection(inviteCodesCollection).Doc(inviteCode))
+	})
 }
 
 func (r *FirestoreRideRepository) ListRidesForUser(ctx context.Context, uid string) ([]*model.Ride, error) {

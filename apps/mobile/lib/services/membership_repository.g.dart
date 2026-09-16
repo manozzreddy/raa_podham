@@ -55,4 +55,4 @@ final class MembershipRepositoryProvider
 }
 
 String _$membershipRepositoryHash() =>
-    r'e8d967c3d116f39b5f4be6b2426fd0f1a524dc08';
+    r'7c3e9a1d4f0b256e8a3c5d9f2e7b4a1c6d0e8f3b';

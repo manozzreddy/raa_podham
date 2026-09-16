@@ -81,6 +81,12 @@ class _AppDrawerContent extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 4),
+                  _PastRidesTile(
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push('/rides/past');
+                    },
+                  ),
                   _AboutTile(
                     onTap: () {
                       Navigator.pop(context);
@@ -177,6 +183,29 @@ class _DrawerAppMark extends StatelessWidget {
           child: Image.asset('assets/icons/app_mark.png'),
         ),
       ),
+    );
+  }
+}
+
+class _PastRidesTile extends StatelessWidget {
+  const _PastRidesTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCupertino) {
+      return CupertinoListTile(
+        leading: const Icon(CupertinoIcons.time),
+        title: const Text('Past rides'),
+        trailing: const Icon(CupertinoIcons.chevron_forward, size: 18),
+        onTap: onTap,
+      );
+    }
+    return ListTile(
+      leading: const Icon(Icons.history),
+      title: const Text('Past rides'),
+      onTap: onTap,
     );
   }
 }

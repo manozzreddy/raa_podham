@@ -10,6 +10,10 @@ on:
       - feat/project-initial-setup
     paths:
       - 'apps/backend/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'storage.rules'
+      - 'database.rules.json'
       - '.github/workflows/backend.yml'
   workflow_dispatch: {}
 
@@ -20,13 +24,12 @@ permissions:
   contents: read
   id-token: write
 
-defaults:
-  run:
-    working-directory: apps/backend
-
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +43,9 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
     steps:
       - uses: actions/checkout@v4
 
@@ -60,3 +66,26 @@ jobs:
             --set-env-vars "FIREBASE_PROJECT_ID=raa-podham,RTDB_URL=https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app,ENV=production" \
             --set-secrets "GOOGLE_PLACES_API_KEY=GOOGLE_PLACES_AND_ROUTES_API_KEY:latest" \
             --quiet
+
+  deploy-rules:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/21519965328/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@raa-podham.iam.gserviceaccount.com
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy Firestore, Storage, and RTDB rules
+        run: |
+          npx firebase-tools@latest deploy \
+            --only firestore:rules,firestore:indexes,storage:rules,database \
+            --project raa-podham \
+            --non-interactive

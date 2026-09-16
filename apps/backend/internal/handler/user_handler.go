@@ -31,11 +31,15 @@ func (h *UserHandler) ListMyRides(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := dto.MyRidesResponse{
-		Active: make([]dto.RideResponse, 0, len(myRides.Active)),
-		Past:   make([]dto.RideResponse, 0, len(myRides.Past)),
+		Active:   make([]dto.RideResponse, 0, len(myRides.Active)),
+		Upcoming: make([]dto.RideResponse, 0, len(myRides.Upcoming)),
+		Past:     make([]dto.RideResponse, 0, len(myRides.Past)),
 	}
 	for _, ride := range myRides.Active {
 		response.Active = append(response.Active, dto.FromRide(ride))
+	}
+	for _, ride := range myRides.Upcoming {
+		response.Upcoming = append(response.Upcoming, dto.FromRide(ride))
 	}
 	for _, ride := range myRides.Past {
 		response.Past = append(response.Past, dto.FromRide(ride))
