@@ -88,7 +88,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   final MapController _mapController = MapController();
 
   /// Two separate controllers, not one shared between both sheet
@@ -121,11 +122,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Set<String>? _knownUpcomingRideIds;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _mapController.dispose();
     _activeRideSheetController.dispose();
     _noActiveRideSheetController.dispose();
     super.dispose();
+  }
+
+  /// Refreshes this device's own reported position the moment the app is
+  /// back in the foreground — see [HomeViewModel.syncLocationNow] for why
+  /// that matters for "last seen" specifically. Reads the active ride
+  /// straight from the cached [ridesViewModelProvider] value rather than
+  /// from `build()`'s local scope, since this can fire between builds.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final activeRide = _findActiveRide(
+      ref.read(ridesViewModelProvider).value ?? const [],
+    );
+    if (activeRide == null) return;
+    ref.read(homeViewModelProvider(activeRide).notifier).syncLocationNow();
   }
 
   @override

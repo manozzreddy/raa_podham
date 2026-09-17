@@ -22,22 +22,23 @@ class PositionRepository {
       return raw.entries
           .map((entry) {
             final value = Map<Object?, Object?>.from(entry.value as Map);
+            final lat = value['lat'] as num?;
+            final lng = value['lng'] as num?;
+            if (lat == null || lng == null) return null;
             // Absent for a position written before this field existed —
             // treat as "just now" rather than flagging an old entry stale
             // the instant this ships.
             final updatedAtMillis = value['updatedAt'] as int?;
             return RiderPosition(
               riderId: entry.key as String,
-              location: LatLng(
-                (value['lat'] as num).toDouble(),
-                (value['lng'] as num).toDouble(),
-              ),
+              location: LatLng(lat.toDouble(), lng.toDouble()),
               isOnline: value['isOnline'] as bool? ?? true,
               updatedAt: updatedAtMillis == null
                   ? DateTime.now()
                   : DateTime.fromMillisecondsSinceEpoch(updatedAtMillis),
             );
           })
+          .whereType<RiderPosition>()
           .toList(growable: false);
     });
   }

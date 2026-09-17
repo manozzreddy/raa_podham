@@ -395,6 +395,47 @@ class HomeViewModel extends _$HomeViewModel {
   /// needed.
   Future<void> openLocationSettings() => Geolocator.openLocationSettings();
 
+  /// Forces a fresh position report right away instead of waiting for the
+  /// next natural [_startReportingPosition] stream tick — called when the
+  /// app comes back to the foreground (see `HomeScreen`'s
+  /// `didChangeAppLifecycleState`). Without this, a rider who's simply
+  /// screen-locked or switched apps for a while reads as stale ("Last
+  /// seen Xm ago") to the rest of the group the moment `staleRiderThreshold`
+  /// elapses, even though they're still very much in the ride — the
+  /// stream only reports again once the device actually moves ~10m
+  /// (`_platformLocationSettings`'s distanceFilter), which doing nothing
+  /// but sitting in the app doesn't trigger.
+  ///
+  /// No-op before reporting has actually started (e.g. the
+  /// background-sharing prompt is still up) — nothing to refresh yet.
+  Future<void> syncLocationNow() async {
+    if (_positionReportSubscription == null) return;
+    final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
+    if (uid == null) return;
+    final position = await acquireCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // See _resolvePositionReporting's own comment — same guard, same reason.
+    if (!ref.mounted) return;
+    if (position == null) return;
+    _selfLocation = LatLng(position.latitude, position.longitude);
+    _hasResolvedSelfLocation = true;
+    _publish();
+    final positions = ref.read(positionRepositoryProvider);
+    unawaited(
+      positions
+          .reportPosition(
+            rideId: _ride.id,
+            uid: uid,
+            lat: position.latitude,
+            lng: position.longitude,
+          )
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint('syncLocationNow reportPosition failed for ${_ride.id}: $error');
+          }),
+    );
+  }
+
   /// Re-acquires the device's location, recenters on it, and marks the
   /// map as following the user again.
   Future<void> recenter() async {

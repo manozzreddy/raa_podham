@@ -7,6 +7,7 @@ import '../../../widgets/sheet_drag_handle.dart';
 import '../view_model/home_view_model.dart';
 import 'home_sheet_chrome.dart';
 import 'info_icon_button.dart';
+import 'reached_badge.dart';
 import 'rider_avatar_chip.dart';
 import 'sheet_action_button.dart';
 
@@ -21,6 +22,15 @@ const double _sheetExpandedThreshold = 0.5;
 /// dragged up) a full [_RiderDetailList] — swapped based on
 /// [sheetExtent] rather than owned by the ViewModel, since it's pure
 /// drag-gesture UI state.
+///
+/// The drag handle, header, and action row scroll away with the rest of
+/// the content rather than staying pinned above it — the whole thing is
+/// one [ListView], not a fixed block followed by a separately-scrollable
+/// list. A fixed block sized for its own content can't shrink below
+/// that content's height, so at a low enough sheet extent it simply
+/// doesn't fit and Flutter throws a RenderFlex overflow; a single
+/// scrollable never has that failure mode; whatever doesn't fit in the
+/// sheet's current height is just reached by scrolling instead.
 class RiderSheet extends StatelessWidget {
   const RiderSheet({
     super.key,
@@ -64,70 +74,71 @@ class RiderSheet extends StatelessWidget {
     final ctaLabel = isHost ? 'End ride' : 'Leave ride';
 
     return HomeSheetContainer(
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          const SheetDragHandle(),
-          const SizedBox(height: 12),
-          _HeaderRow(
-            riderCount: riders.length,
-            rideName: rideName,
-            destinationName: destinationName,
-            routeSummary: routeSummary,
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SheetActionButton(
-                    icon: isCupertino
-                        ? CupertinoIcons.person_add_solid
-                        : Icons.person_add_alt_1,
-                    label: 'Invite',
-                    onPressed: onInviteMore,
-                  ),
+      child: ValueListenableBuilder<double>(
+        valueListenable: sheetExtent,
+        builder: (context, extent, child) {
+          final isExpanded = extent >= _sheetExpandedThreshold;
+          return ListView(
+            primary: true,
+            physics: homeSheetSnapPhysics,
+            padding: EdgeInsets.zero,
+            children: [
+              const SizedBox(height: 8),
+              const Center(child: SheetDragHandle()),
+              const SizedBox(height: 12),
+              _HeaderRow(
+                riderCount: riders.length,
+                rideName: rideName,
+                destinationName: destinationName,
+                routeSummary: routeSummary,
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SheetActionButton(
+                        icon: isCupertino
+                            ? CupertinoIcons.person_add_solid
+                            : Icons.person_add_alt_1,
+                        label: 'Invite',
+                        onPressed: onInviteMore,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SheetActionButton(
+                        icon: isCupertino
+                            ? CupertinoIcons.square_arrow_right
+                            : Icons.logout,
+                        label: ctaLabel,
+                        onPressed: onCta,
+                        isDestructive: true,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SheetActionButton(
-                    icon: isCupertino
-                        ? CupertinoIcons.square_arrow_right
-                        : Icons.logout,
-                    label: ctaLabel,
-                    onPressed: onCta,
-                    isDestructive: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ValueListenableBuilder<double>(
-              valueListenable: sheetExtent,
-              builder: (context, extent, child) {
-                final isExpanded = extent >= _sheetExpandedThreshold;
-                return AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: isExpanded
-                      ? _RiderDetailList(
-                          key: const ValueKey('expanded'),
-                          riders: riders,
-                          onRiderTap: onRiderTap,
-                          onShowInfo: onShowInfo,
-                        )
-                      : _CollapsedContent(
-                          key: const ValueKey('collapsed'),
-                          riders: riders,
-                          onRiderTap: onRiderTap,
-                        ),
-                );
-              },
-            ),
-          ),
-        ],
+              ),
+              const SizedBox(height: 12),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: isExpanded
+                    ? _RiderDetailList(
+                        key: const ValueKey('expanded'),
+                        riders: riders,
+                        onRiderTap: onRiderTap,
+                        onShowInfo: onShowInfo,
+                      )
+                    : _CollapsedContent(
+                        key: const ValueKey('collapsed'),
+                        riders: riders,
+                        onRiderTap: onRiderTap,
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -225,9 +236,9 @@ class _CollapsedContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      primary: true,
-      physics: homeSheetSnapPhysics,
+    // No scrollable of its own — RiderSheet's outer ListView is the only
+    // scrollable now, this just supplies one of its items.
+    return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: _RiderChipRow(riders: riders, onRiderTap: onRiderTap),
     );
@@ -258,6 +269,7 @@ class _RiderChipRow extends StatelessWidget {
             isOnline: rider.isOnline,
             isSelf: rider.isSelf,
             isHost: rider.isHost,
+            hasReachedDestination: rider.hasReachedDestination,
             onTap: () => onRiderTap(rider.uid),
           );
         },
@@ -280,20 +292,19 @@ class _RiderDetailList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      primary: true,
-      physics: homeSheetSnapPhysics,
+    // No scrollable of its own — see _CollapsedContent.
+    return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-      itemCount: riders.length,
-      separatorBuilder: (context, index) => const SizedBox.shrink(),
-      itemBuilder: (context, index) {
-        final rider = riders[index];
-        return _RiderDetailRow(
-          rider: rider,
-          onTap: () => onRiderTap(rider.uid),
-          onShowInfo: () => onShowInfo(rider.uid),
-        );
-      },
+      child: Column(
+        children: [
+          for (final rider in riders)
+            _RiderDetailRow(
+              rider: rider,
+              onTap: () => onRiderTap(rider.uid),
+              onShowInfo: () => onShowInfo(rider.uid),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -327,6 +338,10 @@ class _RiderDetailRow extends StatelessWidget {
         if (rider.isHost) ...[
           const SizedBox(width: 6),
           HostBadge(ringColor: sheetBackground),
+        ],
+        if (rider.hasReachedDestination) ...[
+          const SizedBox(width: 6),
+          ReachedBadge(ringColor: sheetBackground),
         ],
       ],
     );

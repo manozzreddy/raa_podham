@@ -46,7 +46,7 @@ class SheetActionButton extends StatelessWidget {
         : AppColors.sunriseAmber;
     final effectiveOnPressed = isLoading ? null : onPressed;
     final content = isLoading
-        ? _LoadingContent(color: color)
+        ? Center(child: _LoadingContent(color: color))
         : _Content(icon: icon, label: label, color: color);
 
     if (isCupertino) {
