@@ -83,6 +83,22 @@ func (r *FirestoreRideRepository) CreateRide(ctx context.Context, ride *model.Ri
 	return fmt.Errorf("could not allocate a unique invite code after %d attempts", maxInviteCodeAttempts)
 }
 
+// UpdateRide persists a host's edit to name/destination/scheduledAt/notes/
+// coverPhotoUrl/status — a targeted field update, same style as
+// StartRide/EndRide, rather than a whole-document Set that could clobber
+// fields (memberUids, inviteCode, createdAt) this method never touches.
+func (r *FirestoreRideRepository) UpdateRide(ctx context.Context, ride *model.Ride) error {
+	_, err := r.client.Collection(ridesCollection).Doc(ride.ID).Update(ctx, []firestore.Update{
+		{Path: "name", Value: ride.Name},
+		{Path: "destination", Value: ride.Destination},
+		{Path: "scheduledAt", Value: ride.ScheduledAt},
+		{Path: "notes", Value: ride.Notes},
+		{Path: "coverPhotoUrl", Value: ride.CoverPhotoURL},
+		{Path: "status", Value: ride.Status},
+	})
+	return err
+}
+
 func (r *FirestoreRideRepository) GetRideByID(ctx context.Context, id string) (*model.Ride, error) {
 	snap, err := r.client.Collection(ridesCollection).Doc(id).Get(ctx)
 	if err != nil {

@@ -43,3 +43,11 @@ func (r *FirestoreProfileRepository) GetProfile(ctx context.Context, uid string)
 	profile.UID = snap.Ref.ID
 	return &profile, nil
 }
+
+// DeleteProfile removes users/{uid}. A no-op error-wise if the profile was
+// never written (e.g. the user deleted their account before ever opening
+// the app past sign-in) — Firestore's Delete doesn't fail on a missing doc.
+func (r *FirestoreProfileRepository) DeleteProfile(ctx context.Context, uid string) error {
+	_, err := r.client.Collection(usersCollection).Doc(uid).Delete(ctx)
+	return err
+}

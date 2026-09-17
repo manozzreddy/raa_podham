@@ -71,7 +71,7 @@ final class HomeViewModelProvider
   }
 }
 
-String _$homeViewModelHash() => r'97612f4d39956359cd532798c110c9b677b1a53b';
+String _$homeViewModelHash() => r'66d9feb90888cb3c60620b3533cabe1278431563';
 
 /// The home screen's view model, scoped to one ride.
 ///

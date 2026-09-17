@@ -51,7 +51,7 @@ final class LocationPermissionViewModelProvider
 }
 
 String _$locationPermissionViewModelHash() =>
-    r'6029b3526a25158cfcdc8dbafdcda751ca816e86';
+    r'66a2c6600bcbc4960840eb60ed2ac6fd96d6b347';
 
 /// Drives [LocationPermissionScreen]: checks where location permission
 /// stands, requests it (or opens Settings) on the user's tap, and

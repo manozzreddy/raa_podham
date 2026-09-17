@@ -55,4 +55,4 @@ final class RideCoverPhotoRepositoryProvider
 }
 
 String _$rideCoverPhotoRepositoryHash() =>
-    r'a4f2e8d1c6b39507a2c4e8b1d6f3a9c5e0b7d2f4';
+    r'0bb3e73f31e5c8502ee085614482a9080c811c82';

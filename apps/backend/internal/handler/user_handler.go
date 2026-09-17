@@ -47,3 +47,18 @@ func (h *UserHandler) ListMyRides(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, response)
 }
+
+func (h *UserHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	uid, ok := middleware.UIDFromContext(r.Context())
+	if !ok {
+		respondError(w, apperror.Forbidden("missing authenticated user"))
+		return
+	}
+
+	if err := h.users.DeleteAccount(r.Context(), uid); err != nil {
+		respondError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -10,23 +10,30 @@ part of 'create_ride_view_model.dart';
 // ignore_for_file: type=lint, type=warning
 
 @ProviderFor(CreateRideViewModel)
-final createRideViewModelProvider = CreateRideViewModelProvider._();
+final createRideViewModelProvider = CreateRideViewModelFamily._();
 
 final class CreateRideViewModelProvider
     extends $NotifierProvider<CreateRideViewModel, CreateRideUiState> {
-  CreateRideViewModelProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'createRideViewModelProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  CreateRideViewModelProvider._({
+    required CreateRideViewModelFamily super.from,
+    required Ride? super.argument,
+  }) : super(
+         retry: null,
+         name: r'createRideViewModelProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$createRideViewModelHash();
+
+  @override
+  String toString() {
+    return r'createRideViewModelProvider'
+        ''
+        '($argument)';
+  }
 
   @$internal
   @override
@@ -39,13 +46,51 @@ final class CreateRideViewModelProvider
       providerOverride: $SyncValueProvider<CreateRideUiState>(value),
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return other is CreateRideViewModelProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
 }
 
 String _$createRideViewModelHash() =>
-    r'7ab7dd5ccb891c0783901c28a9adb76cf137371d';
+    r'fe9b3c3cf1994a4d10259dde123765f098df75df';
+
+final class CreateRideViewModelFamily extends $Family
+    with
+        $ClassFamilyOverride<
+          CreateRideViewModel,
+          CreateRideUiState,
+          CreateRideUiState,
+          CreateRideUiState,
+          Ride?
+        > {
+  CreateRideViewModelFamily._()
+    : super(
+        retry: null,
+        name: r'createRideViewModelProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
+
+  CreateRideViewModelProvider call(Ride? existingRide) =>
+      CreateRideViewModelProvider._(argument: existingRide, from: this);
+
+  @override
+  String toString() => r'createRideViewModelProvider';
+}
 
 abstract class _$CreateRideViewModel extends $Notifier<CreateRideUiState> {
-  CreateRideUiState build();
+  late final _$args = ref.$arg as Ride?;
+  Ride? get existingRide => _$args;
+
+  CreateRideUiState build(Ride? existingRide);
   @$mustCallSuper
   @override
   WhenComplete runBuild() {
@@ -58,6 +103,6 @@ abstract class _$CreateRideViewModel extends $Notifier<CreateRideUiState> {
               Object?,
               Object?
             >;
-    return element.handleCreate(ref, build);
+    return element.handleCreate(ref, () => build(_$args));
   }
 }

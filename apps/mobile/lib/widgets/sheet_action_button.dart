@@ -6,8 +6,8 @@ import '../theme/theme.dart';
 /// A compact icon+label pill for a sheet or page's action row — the row
 /// of primary actions right under a header (Invite / End ride, Create /
 /// Join, Delete ride, ...). Used across both `home` (sheets) and `rides`
-/// (`PastRideDetailScreen`'s Delete action) — promoted here once that
-/// second feature needed it too, per this codebase's widget-sharing rule
+/// (`RideDetailScreen`'s action row) — promoted here once that second
+/// feature needed it too, per this codebase's widget-sharing rule
 /// (`.agents/rules/architecture.md`).
 class SheetActionButton extends StatelessWidget {
   const SheetActionButton({

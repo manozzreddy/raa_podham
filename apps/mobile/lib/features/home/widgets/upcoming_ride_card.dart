@@ -9,7 +9,7 @@ import '../../rides/models/ride.dart';
 /// cover-photo banner (or a plain gradient one, if the host didn't add a
 /// photo) with the name/time overlaid, the destination underneath, and a
 /// host-only "Start now" action — tapping the card itself (anywhere but
-/// that button) opens `UpcomingRideDetailSheet` for the full picture.
+/// that button) opens `RideDetailScreen` for the full picture.
 class UpcomingRideCard extends StatelessWidget {
   const UpcomingRideCard({
     super.key,

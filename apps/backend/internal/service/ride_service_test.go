@@ -38,6 +38,14 @@ func (f *fakeRideRepository) CreateRide(ctx context.Context, ride *model.Ride, h
 	return nil
 }
 
+func (f *fakeRideRepository) UpdateRide(ctx context.Context, ride *model.Ride) error {
+	if _, ok := f.rides[ride.ID]; !ok {
+		return repository.ErrNotFound
+	}
+	f.rides[ride.ID] = ride
+	return nil
+}
+
 func (f *fakeRideRepository) GetRideByID(ctx context.Context, id string) (*model.Ride, error) {
 	ride, ok := f.rides[id]
 	if !ok {
@@ -168,6 +176,11 @@ func (f *fakeProfileRepository) GetProfile(ctx context.Context, uid string) (*mo
 		return nil, repository.ErrNotFound
 	}
 	return profile, nil
+}
+
+func (f *fakeProfileRepository) DeleteProfile(ctx context.Context, uid string) error {
+	delete(f.profiles, uid)
+	return nil
 }
 
 func appErrorCode(t *testing.T, err error) string {
@@ -368,6 +381,166 @@ func TestRideService_StartRideNow(t *testing.T) {
 	}
 }
 
+func TestRideService_UpdateRide(t *testing.T) {
+	destination := &model.Destination{Name: "Cubbon Park", Lat: 12.9716, Lng: 77.5946}
+	scheduledAt := time.Now().UTC().Add(24 * time.Hour)
+
+	tests := []struct {
+		name      string
+		callerUID string
+		seed      *model.Ride
+		input     service.UpdateRideInput
+		wantCode  string // "" means no error expected
+	}{
+		{
+			name:      "host edits a scheduled ride",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"}, Name: "Old name",
+			},
+			input: service.UpdateRideInput{
+				Name: "New name", Destination: destination, ScheduledAt: &scheduledAt, Notes: "Bring water",
+			},
+			wantCode: "",
+		},
+		{
+			name:      "non-host forbidden",
+			callerUID: "rider-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+				HostUID: "host-1", MemberUIDs: []string{"host-1", "rider-1"},
+			},
+			input:    service.UpdateRideInput{Name: "New name"},
+			wantCode: "forbidden",
+		},
+		{
+			name:      "active ride can't be edited",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusActive,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			input:    service.UpdateRideInput{Name: "New name"},
+			wantCode: "conflict",
+		},
+		{
+			name:      "ended ride can't be edited",
+			callerUID: "host-1",
+			seed: &model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusEnded,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			},
+			input:    service.UpdateRideInput{Name: "New name"},
+			wantCode: "gone",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rides := newFakeRideRepository()
+			presence := newFakePresenceRepository()
+			svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+			rides.seedRide(tt.seed)
+
+			got, err := svc.UpdateRide(context.Background(), tt.callerUID, "ride-1", tt.input)
+			if tt.wantCode == "" {
+				if err != nil {
+					t.Fatalf("UpdateRide returned error: %v", err)
+				}
+				if got.Name != tt.input.Name {
+					t.Errorf("Name = %q, want %q", got.Name, tt.input.Name)
+				}
+				if got.Destination == nil || *got.Destination != *destination {
+					t.Errorf("Destination = %+v, want %+v", got.Destination, destination)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if got := appErrorCode(t, err); got != tt.wantCode {
+				t.Errorf("error code = %q, want %q", got, tt.wantCode)
+			}
+		})
+	}
+}
+
+// TestRideService_UpdateRide_ClearingScheduledTimeStartsRide covers the
+// same status-derivation UpdateRide shares with CreateRide via
+// validateRideInput: submitting the edit form with no scheduled time set
+// (the host cleared it) flips the ride active immediately, same as
+// skipping "Starts" at creation.
+func TestRideService_UpdateRide_ClearingScheduledTimeStartsRide(t *testing.T) {
+	rides := newFakeRideRepository()
+	presence := newFakePresenceRepository()
+	svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+	rides.seedRide(&model.Ride{
+		ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+		HostUID: "host-1", MemberUIDs: []string{"host-1"}, Name: "Ride",
+	})
+
+	got, err := svc.UpdateRide(context.Background(), "host-1", "ride-1", service.UpdateRideInput{Name: "Ride"})
+	if err != nil {
+		t.Fatalf("UpdateRide returned error: %v", err)
+	}
+	if got.Status != model.RideStatusActive {
+		t.Errorf("Status = %q, want %q", got.Status, model.RideStatusActive)
+	}
+	if !presence.present["ride-1"]["host-1"] {
+		t.Errorf("expected host to be marked present once the edit starts the ride")
+	}
+}
+
+func TestRideService_UpdateRide_Validation(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	tooFarAhead := time.Now().UTC().Add(2 * 365 * 24 * time.Hour)
+	tooLongNotes := strings.Repeat("a", 501)
+
+	tests := []struct {
+		name  string
+		input service.UpdateRideInput
+	}{
+		{
+			name:  "scheduled time in the past",
+			input: service.UpdateRideInput{Name: "Ride", ScheduledAt: &past},
+		},
+		{
+			name:  "scheduled time too far ahead",
+			input: service.UpdateRideInput{Name: "Ride", ScheduledAt: &tooFarAhead},
+		},
+		{
+			name:  "notes too long",
+			input: service.UpdateRideInput{Name: "Ride", Notes: tooLongNotes},
+		},
+		{
+			name:  "cover photo URL not from our Storage bucket",
+			input: service.UpdateRideInput{Name: "Ride", CoverPhotoURL: "https://evil.example.com/x.jpg"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rides := newFakeRideRepository()
+			presence := newFakePresenceRepository()
+			svc := service.NewRideService(rides, presence, newFakeProfileRepository())
+			rides.seedRide(&model.Ride{
+				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
+				HostUID: "host-1", MemberUIDs: []string{"host-1"},
+			})
+
+			_, err := svc.UpdateRide(context.Background(), "host-1", "ride-1", tt.input)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if got := appErrorCode(t, err); got != "bad_request" {
+				t.Errorf("error code = %q, want %q", got, "bad_request")
+			}
+		})
+	}
+}
+
 func TestRideService_DeleteRide(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -403,13 +576,13 @@ func TestRideService_DeleteRide(t *testing.T) {
 			wantCode: "conflict",
 		},
 		{
-			name:      "still scheduled",
+			name:      "host deletes a still-scheduled ride",
 			callerUID: "host-1",
 			seed: &model.Ride{
 				ID: "ride-1", InviteCode: "CODE01", Status: model.RideStatusScheduled,
 				HostUID: "host-1", MemberUIDs: []string{"host-1"},
 			},
-			wantCode: "conflict",
+			wantCode: "",
 		},
 	}
 

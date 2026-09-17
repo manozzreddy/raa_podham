@@ -49,6 +49,33 @@ func NewRideService(rides repository.RideRepository, presence repository.Presenc
 	return &RideService{rides: rides, presence: presence, profiles: profiles}
 }
 
+// validateRideInput checks the content rules shared by CreateRide and
+// UpdateRide (notes length, cover photo URL, scheduledAt bounds), and
+// derives the status those inputs imply: RideStatusActive if scheduledAt
+// is nil or already due, RideStatusScheduled otherwise.
+func validateRideInput(notes, coverPhotoURL string, scheduledAt *time.Time, now time.Time) (model.RideStatus, error) {
+	if len(notes) > maxNotesLength {
+		return "", apperror.BadRequest("notes are too long")
+	}
+	if coverPhotoURL != "" && !strings.HasPrefix(coverPhotoURL, coverPhotoURLPrefix) {
+		return "", apperror.BadRequest("cover photo URL is not valid")
+	}
+
+	if scheduledAt == nil {
+		return model.RideStatusActive, nil
+	}
+	if scheduledAt.Before(now.Add(-scheduledClockSkewTolerance)) {
+		return "", apperror.BadRequest("scheduled time is in the past")
+	}
+	if scheduledAt.After(now.Add(maxScheduledAhead)) {
+		return "", apperror.BadRequest("scheduled time is too far in the future")
+	}
+	if scheduledAt.After(now) {
+		return model.RideStatusScheduled, nil
+	}
+	return model.RideStatusActive, nil
+}
+
 // CreateRideInput bundles CreateRide's ride-content fields — kept out of the
 // positional parameter list because several are adjacent bare strings
 // (Name, Notes, CoverPhotoURL) that positional args alone don't protect
@@ -62,30 +89,15 @@ type CreateRideInput struct {
 }
 
 func (s *RideService) CreateRide(ctx context.Context, hostUID string, input CreateRideInput) (*model.Ride, error) {
-	if len(input.Notes) > maxNotesLength {
-		return nil, apperror.BadRequest("notes are too long")
-	}
-	if input.CoverPhotoURL != "" && !strings.HasPrefix(input.CoverPhotoURL, coverPhotoURLPrefix) {
-		return nil, apperror.BadRequest("cover photo URL is not valid")
+	now := time.Now().UTC()
+	status, err := validateRideInput(input.Notes, input.CoverPhotoURL, input.ScheduledAt, now)
+	if err != nil {
+		return nil, err
 	}
 
 	code, err := model.NewInviteCode()
 	if err != nil {
 		return nil, apperror.Internal(err)
-	}
-
-	now := time.Now().UTC()
-	status := model.RideStatusActive
-	if input.ScheduledAt != nil {
-		if input.ScheduledAt.Before(now.Add(-scheduledClockSkewTolerance)) {
-			return nil, apperror.BadRequest("scheduled time is in the past")
-		}
-		if input.ScheduledAt.After(now.Add(maxScheduledAhead)) {
-			return nil, apperror.BadRequest("scheduled time is too far in the future")
-		}
-		if input.ScheduledAt.After(now) {
-			status = model.RideStatusScheduled
-		}
 	}
 
 	ride := &model.Ride{
@@ -116,6 +128,71 @@ func (s *RideService) CreateRide(ctx context.Context, hostUID string, input Crea
 	// StartRideNow for one that was scheduled.
 	if status == model.RideStatusActive {
 		if err := s.presence.SetMember(ctx, ride.ID, hostUID, true); err != nil {
+			return nil, apperror.Internal(err)
+		}
+	}
+
+	return ride, nil
+}
+
+// UpdateRideInput bundles UpdateRide's editable fields — the same set
+// CreateRideInput has, since editing replaces the ride's whole content
+// rather than patching individual fields.
+type UpdateRideInput struct {
+	Name          string
+	Destination   *model.Destination
+	ScheduledAt   *time.Time
+	Notes         string
+	CoverPhotoURL string
+}
+
+// UpdateRide lets the host edit a ride's content while it's still
+// upcoming. Host-only, and scheduled-only: once a ride is active, riders
+// are already relying on its destination for their own live route/ETA,
+// and once it's ended there's nothing left to edit. Reuses CreateRide's
+// own validation/status rules via validateRideInput — clearing the
+// scheduled time (or setting one already due) flips the ride active on
+// save, the same side effect StartRideNow has for a ride left untouched.
+func (s *RideService) UpdateRide(ctx context.Context, hostUID, rideID string, input UpdateRideInput) (*model.Ride, error) {
+	ride, err := s.rides.GetRideByID(ctx, rideID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, apperror.NotFound("ride")
+	}
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	if hostUID != ride.HostUID {
+		return nil, apperror.Forbidden("only the host can edit this ride")
+	}
+	// Same Conflict-vs-Gone split as StartRideNow: an active ride might
+	// still be editable later were it not for its members already
+	// depending on this content mid-ride, while an ended one never will
+	// be again.
+	switch ride.Status {
+	case model.RideStatusEnded:
+		return nil, apperror.Gone("this ride has ended")
+	case model.RideStatusActive:
+		return nil, apperror.Conflict("only an upcoming ride can be edited")
+	}
+
+	status, err := validateRideInput(input.Notes, input.CoverPhotoURL, input.ScheduledAt, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+
+	ride.Name = input.Name
+	ride.Destination = input.Destination
+	ride.ScheduledAt = input.ScheduledAt
+	ride.Notes = input.Notes
+	ride.CoverPhotoURL = input.CoverPhotoURL
+	ride.Status = status
+
+	if err := s.rides.UpdateRide(ctx, ride); err != nil {
+		return nil, apperror.Internal(err)
+	}
+	if status == model.RideStatusActive {
+		if err := s.presence.SetMember(ctx, rideID, hostUID, true); err != nil {
 			return nil, apperror.Internal(err)
 		}
 	}
@@ -157,11 +234,13 @@ func (s *RideService) StartRideNow(ctx context.Context, hostUID, rideID string) 
 	return nil
 }
 
-// DeleteRide permanently removes an ended ride and everything tied to it
-// — Firestore (the ride doc, its members subcollection, and its invite
-// code lookup), and the Realtime Database. Host-only, and only for a ride
-// that's actually over: this is a one-way cleanup action, not a way to
-// cancel one still in progress (EndRide is that).
+// DeleteRide permanently removes a ride and everything tied to it —
+// Firestore (the ride doc, its members subcollection, and its invite
+// code lookup), and the Realtime Database. Host-only, and never for a
+// ride that's actually active: this is a one-way cleanup action, not a
+// way to cancel one still in progress (EndRide is that). Ended or still
+// scheduled are both fine — a ride that never started has no ride
+// history worth protecting either.
 func (s *RideService) DeleteRide(ctx context.Context, hostUID, rideID string) error {
 	ride, err := s.rides.GetRideByID(ctx, rideID)
 	if errors.Is(err, repository.ErrNotFound) {
@@ -174,8 +253,8 @@ func (s *RideService) DeleteRide(ctx context.Context, hostUID, rideID string) er
 	if hostUID != ride.HostUID {
 		return apperror.Forbidden("only the host can delete this ride")
 	}
-	if ride.Status != model.RideStatusEnded {
-		return apperror.Conflict("only a ride that has ended can be deleted")
+	if ride.Status == model.RideStatusActive {
+		return apperror.Conflict("an active ride can't be deleted — end it first")
 	}
 
 	if err := s.rides.DeleteRide(ctx, rideID, ride.InviteCode); err != nil {

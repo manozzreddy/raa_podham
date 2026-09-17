@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>21519965328-ba2a68c6o4vh463k1hvjc96c8075h71b.apps.googleusercontent.com</string>
+	<string>21519965328-mefmpsitcv4o2bftpr2do1scgingfc2k.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.21519965328-ba2a68c6o4vh463k1hvjc96c8075h71b</string>
+	<string>com.googleusercontent.apps.21519965328-mefmpsitcv4o2bftpr2do1scgingfc2k</string>
 	<key>ANDROID_CLIENT_ID</key>
 	<string>21519965328-p2u91m785uca54luj8le2fpkr2niv0n4.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.dynamicarraytech.raaPodham</string>
+	<string>in.manojreddy.raaPodham</string>
 	<key>PROJECT_ID</key>
 	<string>raa-podham</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,7 +31,7 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:21519965328:ios:bfe07f382f8ba922a5cc15</string>
+	<string>1:21519965328:ios:f0c72caa4d389375a5cc15</string>
 	<key>DATABASE_URL</key>
 	<string>https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app</string>
 </dict>

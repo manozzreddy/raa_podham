@@ -13,7 +13,12 @@ part of 'permission_service.dart';
 final permissionServiceProvider = PermissionServiceProvider._();
 
 final class PermissionServiceProvider
-    extends $FunctionalProvider<PermissionService, PermissionService, PermissionService>
+    extends
+        $FunctionalProvider<
+          PermissionService,
+          PermissionService,
+          PermissionService
+        >
     with $Provider<PermissionService> {
   PermissionServiceProvider._()
     : super(
@@ -49,5 +54,4 @@ final class PermissionServiceProvider
   }
 }
 
-String _$permissionServiceHash() =>
-    r'd91a4f6c2e8b357a0c9d1e6f4b8a2c7d3e5f0a9b';
+String _$permissionServiceHash() => r'7fc5de81a293ef30e79c4bece4cfcd916aff77e5';

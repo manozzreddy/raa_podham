@@ -50,7 +50,7 @@ class _DestinationSearchScreenState
       if (suggestion == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not load that place. Try again.'),
+            content: Text("Couldn't load that place. Try again."),
           ),
         );
         return;
@@ -138,12 +138,22 @@ class _SuggestionRow extends StatelessWidget {
     final leading = Icon(
       isCupertino ? CupertinoIcons.location_solid : Icons.place_outlined,
     );
+    final distanceMeters = suggestion.distanceMeters;
+    final trailing = distanceMeters == null
+        ? null
+        : Text(
+            _formatDistance(distanceMeters),
+            style: isCupertino
+                ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
+                : Theme.of(context).textTheme.bodySmall,
+          );
 
     if (isCupertino) {
       return CupertinoListTile(
         leading: leading,
         title: title,
         subtitle: subtitle,
+        trailing: trailing,
         onTap: onTap,
       );
     }
@@ -151,9 +161,12 @@ class _SuggestionRow extends StatelessWidget {
       leading: leading,
       title: title,
       subtitle: subtitle,
+      trailing: trailing,
       onTap: onTap,
     );
   }
+
+  String _formatDistance(int meters) => '${(meters / 1000).toStringAsFixed(1)} km';
 }
 
 class _EmptyState extends StatelessWidget {

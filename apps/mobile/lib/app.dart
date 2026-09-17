@@ -12,8 +12,8 @@ import 'features/rides/models/ride.dart';
 import 'features/rides/view/create_ride_screen.dart';
 import 'features/rides/view/destination_search_screen.dart';
 import 'features/rides/view/join_ride_screen.dart';
-import 'features/rides/view/past_ride_detail_screen.dart';
 import 'features/rides/view/past_rides_screen.dart';
+import 'features/rides/view/ride_detail_screen.dart';
 import 'features/rides/view/share_invite_screen.dart';
 import 'features/settings/view/settings_screen.dart';
 import 'features/splash/view/splash_screen.dart';
@@ -136,6 +136,11 @@ GoRouter appRouter(Ref ref) {
         builder: (context, state) => const CreateRideScreen(),
       ),
       GoRoute(
+        path: '/rides/edit',
+        builder: (context, state) =>
+            CreateRideScreen(ride: state.extra! as Ride),
+      ),
+      GoRoute(
         path: '/rides/destination-search',
         builder: (context, state) => const DestinationSearchScreen(),
       ),
@@ -153,9 +158,9 @@ GoRouter appRouter(Ref ref) {
         builder: (context, state) => const PastRidesScreen(),
       ),
       GoRoute(
-        path: '/rides/past/detail',
+        path: '/rides/detail',
         builder: (context, state) =>
-            PastRideDetailScreen(ride: state.extra! as Ride),
+            RideDetailScreen(ride: state.extra! as Ride),
       ),
       GoRoute(
         path: '/settings',

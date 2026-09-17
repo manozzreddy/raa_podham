@@ -11,6 +11,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'package:raa_podham/features/rides/view_model/destination_search_view_model.dart';
 import 'package:raa_podham/services/geocoding_repository.dart';
@@ -27,7 +28,10 @@ class _FakeGeocodingRepository implements GeocodingRepository {
   DestinationSuggestion? nextResolved;
 
   @override
-  Future<List<DestinationPrediction>> autocomplete(String query) {
+  Future<List<DestinationPrediction>> autocomplete(
+    String query, {
+    LatLng? origin,
+  }) {
     queries.add(query);
     final completer = Completer<List<DestinationPrediction>>();
     _pending[query] = completer;

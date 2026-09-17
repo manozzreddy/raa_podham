@@ -55,7 +55,7 @@ final class NoActiveRideViewModelProvider
 }
 
 String _$noActiveRideViewModelHash() =>
-    r'8ffaf658041cb4fa5ce0dd2f00d09f00d674fa0e';
+    r'31bcadf7937d2325efc5bda5e39b1aba084cab72';
 
 /// The landing screen's view model for when there's no active ride.
 ///

@@ -3,9 +3,10 @@ package dto
 import "github.com/dynamicarraytech/raa-podham/backend/internal/repository"
 
 type PlacePredictionResponse struct {
-	PlaceID       string `json:"placeId"`
-	DisplayName   string `json:"displayName"`
-	SecondaryText string `json:"secondaryText"`
+	PlaceID        string `json:"placeId"`
+	DisplayName    string `json:"displayName"`
+	SecondaryText  string `json:"secondaryText"`
+	DistanceMeters *int   `json:"distanceMeters,omitempty"`
 }
 
 type AutocompleteResponse struct {
@@ -20,9 +21,10 @@ func FromPlacePredictions(predictions []repository.PlacePrediction) Autocomplete
 	}
 	for i, p := range predictions {
 		resp.Predictions[i] = PlacePredictionResponse{
-			PlaceID:       p.PlaceID,
-			DisplayName:   p.DisplayName,
-			SecondaryText: p.SecondaryText,
+			PlaceID:        p.PlaceID,
+			DisplayName:    p.DisplayName,
+			SecondaryText:  p.SecondaryText,
+			DistanceMeters: p.DistanceMeters,
 		}
 	}
 	return resp

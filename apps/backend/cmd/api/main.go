@@ -18,6 +18,7 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
 	"firebase.google.com/go/v4/db"
+	fbstorage "firebase.google.com/go/v4/storage"
 
 	"github.com/dynamicarraytech/raa-podham/backend/internal/config"
 	"github.com/dynamicarraytech/raa-podham/backend/internal/firebaseapp"
@@ -95,16 +96,31 @@ func run() error {
 		return err
 	}
 
+	var storageClient *fbstorage.Client
+	if err := step("storage client", func() error {
+		var err error
+		storageClient, err = firebaseapp.NewStorageClient(ctx, app)
+		return err
+	}); err != nil {
+		return err
+	}
+	storageBucket, err := storageClient.DefaultBucket()
+	if err != nil {
+		return fmt.Errorf("resolving default storage bucket: %w", err)
+	}
+
 	rideRepo := repository.NewFirestoreRideRepository(firestoreClient)
 	presenceRepo := repository.NewRTDBPresenceRepository(rtdbClient)
 	profileRepo := repository.NewFirestoreProfileRepository(firestoreClient)
+	storageRepo := repository.NewFirebaseStorageRepository(storageBucket)
+	authRepo := repository.NewFirebaseAuthRepository(authClient)
 	placesRepo := repository.NewGooglePlacesRepository(cfg.GooglePlacesAPIKey, repository.GooglePlacesBaseURL)
 	// Same key as Places — both were enabled on it together (see
 	// .env.example); it's just named for the first of the two.
 	routesRepo := repository.NewGoogleRoutesRepository(cfg.GooglePlacesAPIKey, repository.GoogleRoutesBaseURL)
 
 	rideService := service.NewRideService(rideRepo, presenceRepo, profileRepo)
-	userService := service.NewUserService(rideRepo)
+	userService := service.NewUserService(rideRepo, presenceRepo, profileRepo, storageRepo, authRepo)
 	placesService := service.NewPlacesService(placesRepo)
 	routesService := service.NewRoutesService(routesRepo)
 

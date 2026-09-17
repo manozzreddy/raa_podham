@@ -6,12 +6,12 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:sheet/sheet.dart';
 
 import '../../../services/providers.dart';
 import '../../../theme/theme.dart';
 import '../../../widgets/app_error_screen.dart';
+import '../../../widgets/loading_scaffold.dart';
 import '../../rides/models/ride.dart';
 import '../../rides/view_model/rides_view_model.dart';
 import '../data/riders_for_ride.dart';
@@ -28,7 +28,6 @@ import '../widgets/no_ride_sheet.dart';
 import '../widgets/rider_avatar_chip.dart';
 import '../widgets/rider_info_sheet.dart';
 import '../widgets/rider_sheet.dart';
-import '../widgets/upcoming_ride_detail_sheet.dart';
 
 /// The sheet's resting (and floor) extent while riding — smaller than
 /// [_noActiveRideSheetExtent] since the map itself, not the sheet,
@@ -91,7 +90,21 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final MapController _mapController = MapController();
-  final SheetController _sheetController = SheetController();
+
+  /// Two separate controllers, not one shared between both sheet
+  /// configurations — `Sheet`'s own `initialExtent` constructor param
+  /// only takes effect the very first time its controller attaches to a
+  /// scrollable. A single shared controller would silently ignore the
+  /// *other* configuration's `initialExtent` on every switch between
+  /// them (since it's already attached from before), leaving the sheet's
+  /// outer box sized for the wrong extent — its content (built for the
+  /// new one) wouldn't fill it, showing the map through the gap until a
+  /// drag gesture forced a relayout. Giving each configuration its own,
+  /// never-reused controller means each one's `initialExtent` is honored
+  /// correctly from its very first frame, with nothing to correct after
+  /// the fact.
+  final SheetController _activeRideSheetController = SheetController();
+  final SheetController _noActiveRideSheetController = SheetController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   /// The rideId the initial all-riders camera fit has already been applied
@@ -99,10 +112,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// another ride later gets its own initial fit too.
   String? _autoFitAppliedForRideId;
 
+  /// Every upcoming ride id seen so far — null until the first time
+  /// [_buildNoActiveRideHome] runs, at which point it's seeded with
+  /// whatever's already upcoming (nothing to surface yet, that's just
+  /// what was there on launch). Any id that shows up *after* that
+  /// baseline is a ride created this session, which is what should pop
+  /// the sheet open — see [_checkForNewUpcomingRide].
+  Set<String>? _knownUpcomingRideIds;
+
   @override
   void dispose() {
     _mapController.dispose();
-    _sheetController.dispose();
+    _activeRideSheetController.dispose();
+    _noActiveRideSheetController.dispose();
     super.dispose();
   }
 
@@ -111,7 +133,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final ridesAsync = ref.watch(ridesViewModelProvider);
 
     return ridesAsync.when(
-      loading: () => const _LoadingScaffold(),
+      loading: () => const LoadingScaffold(),
       error: (error, stackTrace) => AppErrorScreen(
         error: error,
         stackTrace: stackTrace,
@@ -188,12 +210,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     return stateAsync.when(
-      loading: () => const _LoadingScaffold(),
+      loading: () => const LoadingScaffold(),
       error: (error, stackTrace) => AppErrorScreen(
         error: error,
         stackTrace: stackTrace,
         message: "Couldn't load this ride.",
-        onRetry: () => ref.invalidate(provider),
+        // Also invalidates ridesViewModelProvider, not just this ride's own
+        // provider — this error is almost always the ride having ended (or
+        // been deleted, e.g. its host deleting their account) out from
+        // under a live listener, in which case retrying homeViewModelProvider
+        // alone just fails the same way forever. Refreshing the outer rides
+        // list lets `build` above notice the ride's no longer active and
+        // fall back to the no-active-ride map instead.
+        onRetry: () {
+          ref.invalidate(ridesViewModelProvider);
+          ref.invalidate(provider);
+        },
       ),
       data: (state) {
         if (state.showBackgroundSharingPrompt) {
@@ -236,16 +268,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         isFollowingUser: state.isFollowingUser,
         onRecenter: viewModel.recenter,
       ),
-      sheetController: _sheetController,
+      sheetController: _activeRideSheetController,
       sheet: RiderSheet(
         rideName: state.rideName,
         destinationName: state.destination?.name,
         routeSummary: state.routeSummary,
         riders: state.riders,
         isHost: state.isHost,
-        sheetExtent: _sheetController.animation,
+        sheetExtent: _activeRideSheetController.animation,
         onInviteMore: viewModel.inviteMore,
-        onCta: () => _handleEndOrLeaveRide(viewModel, isHost: state.isHost),
+        onCta: () => _confirmEndOrLeaveRide(viewModel, isHost: state.isHost),
         onRiderTap: (riderId) {
           viewModel.selectRider(riderId);
           _focusOnRider(viewModel, riderId);
@@ -253,6 +285,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onShowInfo: viewModel.showRiderInfo,
       ),
     );
+  }
+
+  /// True exactly on the build where a ride not seen before shows up in
+  /// [upcomingRides] — see [_knownUpcomingRideIds]'s own doc comment for
+  /// why the very first call always returns false regardless of what's
+  /// already in [upcomingRides].
+  bool _checkForNewUpcomingRide(List<Ride> upcomingRides) {
+    final currentIds = upcomingRides.map((ride) => ride.id).toSet();
+    final knownIds = _knownUpcomingRideIds;
+    if (knownIds == null) {
+      _knownUpcomingRideIds = currentIds;
+      return false;
+    }
+    final hasNewRide = currentIds.any((id) => !knownIds.contains(id));
+    if (hasNewRide) {
+      _knownUpcomingRideIds = knownIds..addAll(currentIds);
+    }
+    return hasNewRide;
+  }
+
+  /// Animates the no-active-ride sheet open to [maxSheetExtent] right
+  /// after a new upcoming ride is detected, rather than trying to make
+  /// the sheet *open* there in the first place (i.e. a different
+  /// `initialExtent` than its resting extent). That fights the package's
+  /// resizable-sheet-child sizing model — which continuously re-lays the
+  /// content out at whatever height matches the *current* drag
+  /// position — enough to lose the sheet's snap-to-two-positions
+  /// behavior entirely once it starts somewhere other than its floor.
+  /// Animating it up a moment after it's already settled normally, the
+  /// same way a real drag would, avoids that: it's the package's
+  /// best-exercised code path, not an edge case of its own initial
+  /// layout.
+  void _revealUpcomingRidesSheet(double maxSheetExtent) {
+    final targetPixels = maxSheetExtent * MediaQuery.sizeOf(context).height;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_noActiveRideSheetController.hasClients) return;
+      _noActiveRideSheetController.animateTo(
+        targetPixels,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   Widget _buildNoActiveRideHome(List<Ride> rides) {
@@ -263,6 +337,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .where((ride) => ride.status == RideStatus.scheduled)
         .toList(growable: false);
     final currentUserId = ref.watch(authStateProvider).value?.uid;
+    if (_checkForNewUpcomingRide(upcomingRides)) {
+      _revealUpcomingRidesSheet(maxSheetExtent);
+    }
 
     ref.listen<AsyncValue<NoActiveRideUiState>>(noActiveRideViewModelProvider, (
       previous,
@@ -278,41 +355,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     return stateAsync.when(
-      loading: () => const _LoadingScaffold(),
+      loading: () => const LoadingScaffold(),
       error: (error, stackTrace) => AppErrorScreen(
         error: error,
         stackTrace: stackTrace,
         onRetry: () => ref.invalidate(noActiveRideViewModelProvider),
       ),
-      data: (state) => _MapHomeScaffold(
-        map: _SelfLocationMap(
-          mapController: _mapController,
-          selfLocation: state.selfLocation,
-          onUserGesture: viewModel.onMapPanned,
-        ),
-        onProfileTap: () => context.push('/settings'),
-        selfPhotoUrl: ref.watch(authStateProvider).value?.photoURL,
-        scaffoldKey: _scaffoldKey,
-        sheetRestExtent: _noActiveRideSheetExtent,
-        maxSheetExtent: maxSheetExtent,
-        fabStack: MapFabStack(
-          isFollowingUser: state.isFollowingUser,
-          onRecenter: viewModel.recenter,
-        ),
-        sheetController: _sheetController,
-        sheet: NoRideSheet(
-          // push, not go: these are sibling top-level routes, so `go`
-          // would tear /home out of the stack entirely instead of
-          // stacking on top of it — no back button, no swipe-back, no
-          // way back if the user changes their mind mid-form.
-          onCreateRide: () => context.push('/rides/create'),
-          onJoinRide: () => context.push('/rides/join'),
-          upcomingRides: upcomingRides,
-          currentUserId: currentUserId,
-          onRideTap: (ride) => unawaited(_showUpcomingRideDetail(ride, currentUserId)),
-          onStartRide: _handleStartRide,
-        ),
-      ),
+      data: (state) {
+        return _MapHomeScaffold(
+          map: _SelfLocationMap(
+            mapController: _mapController,
+            selfLocation: state.selfLocation,
+            onUserGesture: viewModel.onMapPanned,
+          ),
+          onProfileTap: () => context.push('/settings'),
+          selfPhotoUrl: ref.watch(authStateProvider).value?.photoURL,
+          scaffoldKey: _scaffoldKey,
+          sheetRestExtent: _noActiveRideSheetExtent,
+          maxSheetExtent: maxSheetExtent,
+          fabStack: MapFabStack(
+            isFollowingUser: state.isFollowingUser,
+            onRecenter: viewModel.recenter,
+          ),
+          sheetController: _noActiveRideSheetController,
+          // NoRideSheet's own content shape flips between a static
+          // message and an actual scrollable list the moment
+          // upcomingRides stops being empty — see sheetKey's own doc
+          // comment on _MapHomeScaffold for why that needs a fresh
+          // Sheet, not just a rebuilt one.
+          sheetKey: ValueKey('no-active-ride-sheet-${upcomingRides.isEmpty}'),
+          sheet: NoRideSheet(
+            // push, not go: these are sibling top-level routes, so `go`
+            // would tear /home out of the stack entirely instead of
+            // stacking on top of it — no back button, no swipe-back, no
+            // way back if the user changes their mind mid-form.
+            onCreateRide: () => context.push('/rides/create'),
+            onJoinRide: () => context.push('/rides/join'),
+            upcomingRides: upcomingRides,
+            currentUserId: currentUserId,
+            onRideTap: (ride) => context.push('/rides/detail', extra: ride),
+            onStartRide: _handleStartRide,
+          ),
+        );
+      },
     );
   }
 
@@ -365,15 +450,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         future: future,
         onDirections: () => viewModel.openDirections(riderId),
         onCenterMap: () => _focusOnRider(viewModel, riderId),
-        onRemove: () => _handleRemoveRider(context, viewModel, riderId),
+        onRemove: () => _confirmRemoveRider(context, viewModel, riderId),
       ),
     );
     viewModel.dismissRiderInfo();
   }
 
-  /// Removes [riderId] from the ride — [RiderInfoSheet] already pops
-  /// itself before calling this, so `context` here is this screen's own
-  /// (still mounted either way), not the sheet's about-to-be-gone one.
+  /// Confirms before actually removing anyone — [RiderInfoSheet] already
+  /// pops itself before calling `onRemove`, so `context` here is this
+  /// screen's own (still mounted either way), not the sheet's
+  /// about-to-be-gone one; safe to show a new dialog on it right away.
+  Future<void> _confirmRemoveRider(
+    BuildContext context,
+    HomeViewModel viewModel,
+    String riderId,
+  ) async {
+    const title = 'Remove this rider?';
+    const message =
+        "They'll be removed from the ride and stop sharing their location "
+        "with the group.";
+
+    void confirmedAction() => _handleRemoveRider(context, viewModel, riderId);
+
+    if (isCupertino) {
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text(title),
+          content: const Text(message),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                confirmedAction();
+              },
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(title),
+        content: const Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              confirmedAction();
+            },
+            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Removes [riderId] from the ride — called only after
+  /// [_confirmRemoveRider]'s dialog is accepted.
   Future<void> _handleRemoveRider(
     BuildContext context,
     HomeViewModel viewModel,
@@ -389,16 +536,87 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Rider removed from the ride')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Rider removed from the ride')),
+    );
   }
 
-  /// The rider sheet's role-aware CTA: ends the ride for everyone (host)
-  /// or just leaves it (member). Once that succeeds, [ridesViewModelProvider]
-  /// is invalidated so this screen re-resolves to the no-active-ride state
-  /// on its own — no explicit navigation needed, unlike the sign-in/out
-  /// flow which the router's redirect already drives the same way.
+  /// Confirms before the rider sheet's CTA actually fires — ending kills
+  /// live tracking for the whole group, and even just leaving stops this
+  /// device's own sharing, so neither should happen on a single
+  /// accidental tap. Only "End ride" is styled destructive: unlike
+  /// leaving (rejoinable with the invite code, the same reversibility
+  /// sign-out has), ending is final for the whole group.
+  Future<void> _confirmEndOrLeaveRide(
+    HomeViewModel viewModel, {
+    required bool isHost,
+  }) async {
+    final title = isHost ? 'End this ride?' : 'Leave this ride?';
+    final message = isHost
+        ? "This ends the ride for everyone in the group and stops "
+              "everyone's location sharing. This can't be undone."
+        : "You'll stop sharing your location and seeing the rest of the "
+              "group. You can rejoin later with the invite code.";
+    final actionLabel = isHost ? 'End ride' : 'Leave';
+
+    void confirmedAction() => _handleEndOrLeaveRide(viewModel, isHost: isHost);
+
+    if (isCupertino) {
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: isHost,
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                confirmedAction();
+              },
+              child: Text(actionLabel),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              confirmedAction();
+            },
+            child: Text(
+              actionLabel,
+              style: isHost ? const TextStyle(color: Colors.red) : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Ends the ride for everyone (host) or just leaves it (member) — called
+  /// only after [_confirmEndOrLeaveRide]'s dialog is accepted. Once that
+  /// succeeds, [ridesViewModelProvider] is invalidated so this screen
+  /// re-resolves to the no-active-ride state on its own — no explicit
+  /// navigation needed, unlike the sign-in/out flow which the router's
+  /// redirect already drives the same way.
   Future<void> _handleEndOrLeaveRide(
     HomeViewModel viewModel, {
     required bool isHost,
@@ -421,29 +639,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.invalidate(ridesViewModelProvider);
   }
 
-  /// Presents [UpcomingRideDetailSheet] for [ride] — same
-  /// `showModalBottomSheet` pattern as the Rider Info modal, but there's
-  /// no per-ride ViewModel to read `isHost`/wire actions through here
-  /// (unlike [HomeViewModel], which only exists for the *active* ride),
-  /// so this screen computes/handles everything directly.
-  Future<void> _showUpcomingRideDetail(Ride ride, String? currentUserId) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => UpcomingRideDetailSheet(
-        ride: ride,
-        isHost: ride.hostId == currentUserId,
-        onStartRide: () => _handleStartRide(ride),
-        onInviteMore: () => _shareInvite(ride),
-      ),
-    );
-  }
-
-  /// The host's "start now" action, from either the upcoming-ride card or
-  /// its detail sheet. [RidesViewModel.startRideNow] already refreshes
-  /// the rides list on success, so [HomeScreen] re-resolves to the map on
-  /// its own — no explicit navigation needed, same as ending/leaving a
-  /// ride.
+  /// The host's "start now" action from `UpcomingRideCard`'s own inline
+  /// button. [RidesViewModel.startRideNow] already refreshes the rides
+  /// list on success, so [HomeScreen] re-resolves to the map on its own —
+  /// no explicit navigation needed, same as ending/leaving a ride.
+  /// (`RideDetailScreen` has its own equivalent for the same action from
+  /// its action row.)
   Future<void> _handleStartRide(Ride ride) async {
     final succeeded = await ref
         .read(ridesViewModelProvider.notifier)
@@ -451,15 +652,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (succeeded || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Couldn't start the ride. Try again.")),
-    );
-  }
-
-  Future<void> _shareInvite(Ride ride) async {
-    await SharePlus.instance.share(
-      ShareParams(
-        text: buildInviteMessage(ride),
-        subject: 'Join my ride on Raa Podham',
-      ),
     );
   }
 }
@@ -509,21 +701,6 @@ class _RiderInfoModalContent extends StatelessWidget {
         );
       },
     );
-  }
-}
-
-class _LoadingScaffold extends StatelessWidget {
-  const _LoadingScaffold();
-
-  @override
-  Widget build(BuildContext context) {
-    final indicator = isCupertino
-        ? const CupertinoActivityIndicator()
-        : const CircularProgressIndicator();
-    if (isCupertino) {
-      return CupertinoPageScaffold(child: Center(child: indicator));
-    }
-    return Scaffold(body: Center(child: indicator));
   }
 }
 
@@ -595,6 +772,7 @@ class _MapHomeScaffold extends StatelessWidget {
     required this.maxSheetExtent,
     required this.sheet,
     this.banner,
+    this.sheetKey,
   });
 
   final Widget map;
@@ -620,6 +798,21 @@ class _MapHomeScaffold extends StatelessWidget {
   final double maxSheetExtent;
   final Widget sheet;
 
+  /// Forces the [Sheet] to fully remount (a fresh `ScrollableState`, not
+  /// just an updated one) whenever it changes — needed because the
+  /// package's `initialExtent` only takes effect the very first time a
+  /// controller attaches. That's normally a one-time cost paid when the
+  /// controller itself is first used (see `_HomeScreenState`'s own two
+  /// controllers, one per sheet configuration), but the *same*
+  /// configuration's content can still change shape in a way the package
+  /// doesn't relayout for on its own — e.g. `NoRideSheet` going from a
+  /// static "no rides yet" message to an actual scrollable list once the
+  /// first upcoming ride appears. Null (the common case, e.g. the
+  /// active-ride sheet, whose shape never varies) skips this — the
+  /// caller only needs to pass a key that changes exactly when the
+  /// content's *shape* does.
+  final Key? sheetKey;
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.sizeOf(context).height;
@@ -641,10 +834,7 @@ class _MapHomeScaffold extends StatelessWidget {
                       ? () => openCupertinoAppMenu(context)
                       : () => scaffoldKey.currentState?.openDrawer(),
                 ),
-                if (banner != null) ...[
-                  const SizedBox(height: 8),
-                  banner!,
-                ],
+                if (banner != null) ...[const SizedBox(height: 8), banner!],
               ],
             ),
           ),
@@ -656,6 +846,7 @@ class _MapHomeScaffold extends StatelessWidget {
         ),
         Positioned.fill(
           child: Sheet(
+            key: sheetKey,
             controller: sheetController,
             initialExtent: sheetRestExtent * screenHeight,
             minExtent: sheetRestExtent * screenHeight,
@@ -758,7 +949,7 @@ class _RideMap extends ConsumerWidget {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.dynamicarraytech.raa_podham',
+          userAgentPackageName: 'in.manojreddy.raa_podham',
         ),
         if (routePolyline.isNotEmpty)
           PolylineLayer(
@@ -823,7 +1014,9 @@ class _RideMap extends ConsumerWidget {
   /// self is the one rider who doesn't otherwise see their own name
   /// anywhere on the map.
   Marker _buildCallout(Rider rider) {
-    final label = rider.isSelf ? '${rider.displayName} (You)' : rider.displayName;
+    final label = rider.isSelf
+        ? '${rider.displayName} (You)'
+        : rider.displayName;
     return Marker(
       point: rider.location,
       width: _calloutWidth,
@@ -838,7 +1031,9 @@ class _RideMap extends ConsumerWidget {
             decoration: BoxDecoration(
               color: AppColors.firstLightCream,
               borderRadius: BorderRadius.circular(6),
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 6),
+              ],
             ),
             alignment: Alignment.center,
             child: Row(
@@ -922,7 +1117,7 @@ class _SelfLocationMap extends StatelessWidget {
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.dynamicarraytech.raa_podham',
+          userAgentPackageName: 'in.manojreddy.raa_podham',
         ),
         MarkerLayer(markers: [_selfMarker()]),
         const RichAttributionWidget(

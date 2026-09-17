@@ -35,7 +35,7 @@ func TestGooglePlacesRepository_Autocomplete(t *testing.T) {
 
 	repo := repository.NewGooglePlacesRepository("test-key", server.URL)
 
-	predictions, err := repo.Autocomplete(context.Background(), "cubbon park")
+	predictions, err := repo.Autocomplete(context.Background(), "cubbon park", nil, nil)
 	if err != nil {
 		t.Fatalf("Autocomplete returned error: %v", err)
 	}
@@ -59,6 +59,49 @@ func TestGooglePlacesRepository_Autocomplete(t *testing.T) {
 	}
 }
 
+func TestGooglePlacesRepository_Autocomplete_WithOrigin(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{
+			"suggestions": [
+				{
+					"placePrediction": {
+						"placeId": "place-1",
+						"text": {"text": "Cubbon Park, Kasturba Road, Bengaluru, Karnataka, India"},
+						"structuredFormat": {
+							"mainText": {"text": "Cubbon Park"},
+							"secondaryText": {"text": "Kasturba Road, Bengaluru, Karnataka, India"}
+						},
+						"distanceMeters": 2345
+					}
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	repo := repository.NewGooglePlacesRepository("test-key", server.URL)
+	originLat, originLng := 12.97, 77.59
+
+	predictions, err := repo.Autocomplete(context.Background(), "cubbon park", &originLat, &originLng)
+	if err != nil {
+		t.Fatalf("Autocomplete returned error: %v", err)
+	}
+
+	origin, ok := gotBody["origin"].(map[string]any)
+	if !ok {
+		t.Fatalf("request body had no origin field: %+v", gotBody)
+	}
+	if origin["latitude"] != originLat || origin["longitude"] != originLng {
+		t.Errorf("origin = %+v, want {latitude:%v longitude:%v}", origin, originLat, originLng)
+	}
+
+	if predictions[0].DistanceMeters == nil || *predictions[0].DistanceMeters != 2345 {
+		t.Errorf("DistanceMeters = %v, want 2345", predictions[0].DistanceMeters)
+	}
+}
+
 func TestGooglePlacesRepository_Autocomplete_FallsBackWithoutStructuredFormat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
@@ -71,7 +114,7 @@ func TestGooglePlacesRepository_Autocomplete_FallsBackWithoutStructuredFormat(t 
 
 	repo := repository.NewGooglePlacesRepository("test-key", server.URL)
 
-	predictions, err := repo.Autocomplete(context.Background(), "bengaluru")
+	predictions, err := repo.Autocomplete(context.Background(), "bengaluru", nil, nil)
 	if err != nil {
 		t.Fatalf("Autocomplete returned error: %v", err)
 	}
@@ -91,7 +134,7 @@ func TestGooglePlacesRepository_Autocomplete_UnexpectedStatus(t *testing.T) {
 
 	repo := repository.NewGooglePlacesRepository("test-key", server.URL)
 
-	if _, err := repo.Autocomplete(context.Background(), "cubbon park"); err == nil {
+	if _, err := repo.Autocomplete(context.Background(), "cubbon park", nil, nil); err == nil {
 		t.Fatal("expected an error for a non-200 response, got nil")
 	}
 }

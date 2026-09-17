@@ -47,17 +47,26 @@ type autocompleteResponse struct {
 					Text string `json:"text"`
 				} `json:"secondaryText"`
 			} `json:"structuredFormat"`
+			// Only present when the request included an origin.
+			DistanceMeters *int `json:"distanceMeters,omitempty"`
 		} `json:"placePrediction"`
 	} `json:"suggestions"`
 }
 
-func (r *GooglePlacesRepository) Autocomplete(ctx context.Context, input string) ([]PlacePrediction, error) {
-	body, err := json.Marshal(map[string]any{
+func (r *GooglePlacesRepository) Autocomplete(ctx context.Context, input string, originLat, originLng *float64) ([]PlacePrediction, error) {
+	requestBody := map[string]any{
 		"input": input,
 		// Matches the product's India-only scope for now, the same
 		// restriction the client-side Nominatim call this replaced used.
 		"includedRegionCodes": []string{"in"},
-	})
+	}
+	if originLat != nil && originLng != nil {
+		requestBody["origin"] = map[string]any{
+			"latitude":  *originLat,
+			"longitude": *originLng,
+		}
+	}
+	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("marshal autocomplete request: %w", err)
 	}
@@ -95,9 +104,10 @@ func (r *GooglePlacesRepository) Autocomplete(ctx context.Context, input string)
 			displayName = p.Text.Text
 		}
 		predictions = append(predictions, PlacePrediction{
-			PlaceID:       p.PlaceID,
-			DisplayName:   displayName,
-			SecondaryText: secondaryText,
+			PlaceID:        p.PlaceID,
+			DisplayName:    displayName,
+			SecondaryText:  secondaryText,
+			DistanceMeters: p.DistanceMeters,
 		})
 	}
 	return predictions, nil

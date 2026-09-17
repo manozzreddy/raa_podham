@@ -40,6 +40,37 @@ class RideRepository {
     return Ride.fromJson(response.data!);
   }
 
+  /// The host's edit-ride action — same request shape as [createRide],
+  /// since the form always submits the full (pre-filled, then edited) set
+  /// of fields rather than a partial patch. The backend rejects this for
+  /// anyone but the host, or once the ride is no longer [RideStatus.scheduled].
+  Future<Ride> updateRide({
+    required String rideId,
+    required String name,
+    DestinationSuggestion? destination,
+    DateTime? scheduledAt,
+    String? notes,
+    String? coverPhotoUrl,
+  }) async {
+    final response = await _apiClient.patch<Map<String, dynamic>>(
+      '/rides/$rideId',
+      data: {
+        'name': name,
+        if (destination != null)
+          'destination': {
+            'name': destination.displayName,
+            'lat': destination.lat,
+            'lng': destination.lng,
+          },
+        if (scheduledAt != null)
+          'scheduledAt': scheduledAt.toUtc().toIso8601String(),
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+        if (coverPhotoUrl != null) 'coverPhotoUrl': coverPhotoUrl,
+      },
+    );
+    return Ride.fromJson(response.data!);
+  }
+
   /// The host's way of skipping the wait on a scheduled ride — the
   /// backend rejects this for anyone else, or for a ride that's already
   /// active or has ended.

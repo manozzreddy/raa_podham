@@ -36,7 +36,7 @@ final class RidesViewModelProvider
   RidesViewModel create() => RidesViewModel();
 }
 
-String _$ridesViewModelHash() => r'73ef5f31577b35346265f6283e377d95bf03b8ee';
+String _$ridesViewModelHash() => r'91e989f41523dce40794e9d255ac48d8f20f6d45';
 
 /// The signed-in user's rides.
 

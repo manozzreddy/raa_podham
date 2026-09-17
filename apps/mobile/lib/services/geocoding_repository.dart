@@ -1,5 +1,6 @@
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'api_client.dart';
 import 'providers.dart';
@@ -15,6 +16,7 @@ class DestinationPrediction {
     required this.placeId,
     required this.displayName,
     required this.secondaryText,
+    this.distanceMeters,
   });
 
   final String placeId;
@@ -26,16 +28,23 @@ class DestinationPrediction {
   /// "Kasturba Road, Bengaluru, Karnataka, India").
   final String secondaryText;
 
+  /// Straight-line distance from the search's origin — null unless
+  /// [GeocodingRepository.autocomplete] was called with one (Google only
+  /// computes this when an origin is supplied).
+  final int? distanceMeters;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is DestinationPrediction &&
           other.placeId == placeId &&
           other.displayName == displayName &&
-          other.secondaryText == secondaryText;
+          other.secondaryText == secondaryText &&
+          other.distanceMeters == distanceMeters;
 
   @override
-  int get hashCode => Object.hash(placeId, displayName, secondaryText);
+  int get hashCode =>
+      Object.hash(placeId, displayName, secondaryText, distanceMeters);
 }
 
 /// A destination fully resolved to coordinates — what the destination
@@ -80,11 +89,20 @@ class GeocodingRepository {
   final ApiClient _apiClient;
 
   /// One-shot request — callers (the ViewModel) are responsible for
-  /// debouncing so this isn't fired on every keystroke.
-  Future<List<DestinationPrediction>> autocomplete(String query) async {
+  /// debouncing so this isn't fired on every keystroke. [origin], when
+  /// given, is what each result's [DestinationPrediction.distanceMeters]
+  /// ends up measured from.
+  Future<List<DestinationPrediction>> autocomplete(
+    String query, {
+    LatLng? origin,
+  }) async {
     final response = await _apiClient.get<Map<String, dynamic>>(
       '/places/autocomplete',
-      queryParameters: {'input': query},
+      queryParameters: {
+        'input': query,
+        if (origin != null) 'originLat': origin.latitude,
+        if (origin != null) 'originLng': origin.longitude,
+      },
     );
 
     if (kDebugMode) {
@@ -99,6 +117,7 @@ class GeocodingRepository {
             placeId: json['placeId'] as String,
             displayName: json['displayName'] as String? ?? '',
             secondaryText: json['secondaryText'] as String? ?? '',
+            distanceMeters: json['distanceMeters'] as int?,
           ),
         )
         .toList(growable: false);

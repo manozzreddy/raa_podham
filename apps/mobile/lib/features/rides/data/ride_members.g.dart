@@ -10,16 +10,18 @@ part of 'ride_members.dart';
 // ignore_for_file: type=lint, type=warning
 /// A ride's member list — just the static profile info ([RiderProfile]),
 /// no live position tracking combined in the way `ridersForRideProvider`
-/// does for an active ride. Used by [PastRideDetailScreen], where there's
-/// nothing live left to show once a ride has ended.
+/// does for an active ride. Used by `RideDetailScreen`, where there's
+/// nothing live left to show once a ride has ended (and, for an upcoming
+/// one, nothing live to show yet).
 
 @ProviderFor(rideMembers)
 final rideMembersProvider = RideMembersFamily._();
 
 /// A ride's member list — just the static profile info ([RiderProfile]),
 /// no live position tracking combined in the way `ridersForRideProvider`
-/// does for an active ride. Used by [PastRideDetailScreen], where there's
-/// nothing live left to show once a ride has ended.
+/// does for an active ride. Used by `RideDetailScreen`, where there's
+/// nothing live left to show once a ride has ended (and, for an upcoming
+/// one, nothing live to show yet).
 
 final class RideMembersProvider
     extends
@@ -28,11 +30,14 @@ final class RideMembersProvider
           List<RiderProfile>,
           Stream<List<RiderProfile>>
         >
-    with $FutureModifier<List<RiderProfile>>, $StreamProvider<List<RiderProfile>> {
+    with
+        $FutureModifier<List<RiderProfile>>,
+        $StreamProvider<List<RiderProfile>> {
   /// A ride's member list — just the static profile info ([RiderProfile]),
   /// no live position tracking combined in the way `ridersForRideProvider`
-  /// does for an active ride. Used by [PastRideDetailScreen], where there's
-  /// nothing live left to show once a ride has ended.
+  /// does for an active ride. Used by `RideDetailScreen`, where there's
+  /// nothing live left to show once a ride has ended (and, for an upcoming
+  /// one, nothing live to show yet).
   RideMembersProvider._({
     required RideMembersFamily super.from,
     required String super.argument,
@@ -77,12 +82,13 @@ final class RideMembersProvider
   }
 }
 
-String _$rideMembersHash() => r'2f8b4e6a9c1d3f507b2e8a4c6d1f9e3b5a7c0d2e';
+String _$rideMembersHash() => r'ba40a61c73484ee3dc8d9fa6f29176874d895351';
 
 /// A ride's member list — just the static profile info ([RiderProfile]),
 /// no live position tracking combined in the way `ridersForRideProvider`
-/// does for an active ride. Used by [PastRideDetailScreen], where there's
-/// nothing live left to show once a ride has ended.
+/// does for an active ride. Used by `RideDetailScreen`, where there's
+/// nothing live left to show once a ride has ended (and, for an upcoming
+/// one, nothing live to show yet).
 
 final class RideMembersFamily extends $Family
     with $FunctionalFamilyOverride<Stream<List<RiderProfile>>, String> {
@@ -97,8 +103,9 @@ final class RideMembersFamily extends $Family
 
   /// A ride's member list — just the static profile info ([RiderProfile]),
   /// no live position tracking combined in the way `ridersForRideProvider`
-  /// does for an active ride. Used by [PastRideDetailScreen], where there's
-  /// nothing live left to show once a ride has ended.
+  /// does for an active ride. Used by `RideDetailScreen`, where there's
+  /// nothing live left to show once a ride has ended (and, for an upcoming
+  /// one, nothing live to show yet).
 
   RideMembersProvider call(String rideId) =>
       RideMembersProvider._(argument: rideId, from: this);

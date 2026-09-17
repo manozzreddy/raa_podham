@@ -12,12 +12,14 @@ import (
 // fakePlacesRepository is a minimal in-memory repository.PlacesRepository,
 // standing in for a real call to Google.
 type fakePlacesRepository struct {
-	predictions []repository.PlacePrediction
-	lat, lng    float64
-	err         error
+	predictions                []repository.PlacePrediction
+	lat, lng                   float64
+	err                        error
+	gotOriginLat, gotOriginLng *float64
 }
 
-func (f *fakePlacesRepository) Autocomplete(ctx context.Context, input string) ([]repository.PlacePrediction, error) {
+func (f *fakePlacesRepository) Autocomplete(ctx context.Context, input string, originLat, originLng *float64) ([]repository.PlacePrediction, error) {
+	f.gotOriginLat, f.gotOriginLng = originLat, originLng
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -39,7 +41,7 @@ func TestPlacesService_Autocomplete(t *testing.T) {
 	}
 	svc := service.NewPlacesService(fake)
 
-	predictions, err := svc.Autocomplete(context.Background(), "cubbon park")
+	predictions, err := svc.Autocomplete(context.Background(), "cubbon park", nil, nil)
 	if err != nil {
 		t.Fatalf("Autocomplete returned error: %v", err)
 	}
@@ -48,10 +50,26 @@ func TestPlacesService_Autocomplete(t *testing.T) {
 	}
 }
 
+func TestPlacesService_Autocomplete_PassesOriginThrough(t *testing.T) {
+	fake := &fakePlacesRepository{}
+	svc := service.NewPlacesService(fake)
+	originLat, originLng := 12.97, 77.59
+
+	if _, err := svc.Autocomplete(context.Background(), "cubbon park", &originLat, &originLng); err != nil {
+		t.Fatalf("Autocomplete returned error: %v", err)
+	}
+	if fake.gotOriginLat == nil || *fake.gotOriginLat != originLat {
+		t.Errorf("gotOriginLat = %v, want %v", fake.gotOriginLat, originLat)
+	}
+	if fake.gotOriginLng == nil || *fake.gotOriginLng != originLng {
+		t.Errorf("gotOriginLng = %v, want %v", fake.gotOriginLng, originLng)
+	}
+}
+
 func TestPlacesService_Autocomplete_EmptyInput(t *testing.T) {
 	svc := service.NewPlacesService(&fakePlacesRepository{})
 
-	_, err := svc.Autocomplete(context.Background(), "   ")
+	_, err := svc.Autocomplete(context.Background(), "   ", nil, nil)
 	if got := appErrorCode(t, err); got != "bad_request" {
 		t.Errorf("error code = %q, want %q", got, "bad_request")
 	}
@@ -60,7 +78,7 @@ func TestPlacesService_Autocomplete_EmptyInput(t *testing.T) {
 func TestPlacesService_Autocomplete_RepositoryError(t *testing.T) {
 	svc := service.NewPlacesService(&fakePlacesRepository{err: errors.New("boom")})
 
-	_, err := svc.Autocomplete(context.Background(), "cubbon park")
+	_, err := svc.Autocomplete(context.Background(), "cubbon park", nil, nil)
 	if got := appErrorCode(t, err); got != "internal" {
 		t.Errorf("error code = %q, want %q", got, "internal")
 	}

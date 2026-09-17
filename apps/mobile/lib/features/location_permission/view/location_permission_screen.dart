@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../services/permission_service.dart';
-import '../../../theme/theme.dart';
 import '../../../widgets/app_error_screen.dart';
+import '../../../widgets/loading_scaffold.dart';
 import '../../../widgets/permission_rationale_scaffold.dart';
 import '../view_model/location_permission_view_model.dart';
 
@@ -64,7 +64,7 @@ class _LocationPermissionScreenState
     );
 
     return stateAsync.when(
-      loading: () => const _LoadingScaffold(),
+      loading: () => const LoadingScaffold(),
       error: (error, stackTrace) => AppErrorScreen(
         error: error,
         stackTrace: stackTrace,
@@ -98,10 +98,13 @@ class _LocationPermissionScreenState
             PermissionReason(
               icon: Icons.bolt_outlined,
               cupertinoIcon: CupertinoIcons.bolt_fill,
-              text: 'Keeps sharing your position steady, even in the background',
+              text:
+                  'Keeps sharing your position steady, even in the background',
             ),
           ],
-          primaryLabel: isPermanentlyDenied ? 'Open Settings' : 'Allow Location Access',
+          primaryLabel: isPermanentlyDenied
+              ? 'Open Settings'
+              : 'Allow Location Access',
           onPrimaryPressed: isPermanentlyDenied
               ? notifier.openSettings
               : notifier.requestPermission,
@@ -113,20 +116,5 @@ class _LocationPermissionScreenState
         );
       },
     );
-  }
-}
-
-class _LoadingScaffold extends StatelessWidget {
-  const _LoadingScaffold();
-
-  @override
-  Widget build(BuildContext context) {
-    final indicator = isCupertino
-        ? const CupertinoActivityIndicator()
-        : const CircularProgressIndicator();
-    if (isCupertino) {
-      return CupertinoPageScaffold(child: Center(child: indicator));
-    }
-    return Scaffold(body: Center(child: indicator));
   }
 }

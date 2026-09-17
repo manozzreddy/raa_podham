@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:latlong2/latlong.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../services/geocoding_repository.dart';
+import '../../../services/permission_service.dart';
+import '../../home/data/device_location.dart';
 
 part 'destination_search_view_model.g.dart';
 
@@ -52,10 +55,30 @@ class DestinationSearchUiState {
 class DestinationSearchViewModel extends _$DestinationSearchViewModel {
   Timer? _debounceTimer;
 
+  /// Where each result's distance is measured from, once resolved — null
+  /// until then (searches meanwhile just come back without one) or if
+  /// location isn't available at all, same fallback [HomeViewModel] and
+  /// [NoActiveRideViewModel] already use.
+  LatLng? _origin;
+
   @override
   DestinationSearchUiState build() {
     ref.onDispose(() => _debounceTimer?.cancel());
+    unawaited(_resolveOrigin());
     return const DestinationSearchUiState();
+  }
+
+  Future<void> _resolveOrigin() async {
+    final position = await acquireCurrentPosition(
+      permissionService: ref.read(permissionServiceProvider),
+    );
+    // The screen could have been popped while this was pending, disposing
+    // this auto-dispose provider — touching `ref` after that throws
+    // UnmountedRefException.
+    if (!ref.mounted) return;
+    if (position != null) {
+      _origin = LatLng(position.latitude, position.longitude);
+    }
   }
 
   void setQuery(String query) {
@@ -75,13 +98,18 @@ class DestinationSearchViewModel extends _$DestinationSearchViewModel {
     try {
       final results = await ref
           .read(geocodingRepositoryProvider)
-          .autocomplete(trimmed);
+          .autocomplete(trimmed, origin: _origin);
+      // The screen could have been popped (destination search abandoned)
+      // while this request was pending, disposing this auto-dispose
+      // provider — touching `state` after that throws UnmountedRefException.
+      if (!ref.mounted) return;
       // The query kept changing while this request was in flight — a
       // newer search already superseded it, so this response is stale
       // and must not overwrite what's now on screen.
       if (state.query != query) return;
       state = state.copyWith(suggestions: results, isSearching: false);
     } catch (error) {
+      if (!ref.mounted) return;
       if (state.query != query) return;
       state = state.copyWith(isSearching: false, suggestions: const []);
     }
@@ -98,9 +126,14 @@ class DestinationSearchViewModel extends _$DestinationSearchViewModel {
       final suggestion = await ref
           .read(geocodingRepositoryProvider)
           .resolvePlace(prediction);
+      // Same guard, same reason as _search — the screen could have been
+      // popped (e.g. the user backed out right after tapping a
+      // suggestion) while this request was pending.
+      if (!ref.mounted) return null;
       state = state.copyWith(isResolving: false);
       return suggestion;
     } catch (_) {
+      if (!ref.mounted) return null;
       state = state.copyWith(isResolving: false);
       return null;
     }

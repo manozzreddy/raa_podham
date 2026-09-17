@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.dynamicarraytech.raa_podham"
+    namespace = "in.manojreddy.raa_podham"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.dynamicarraytech.raa_podham"
+        applicationId = "in.manojreddy.raa_podham"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

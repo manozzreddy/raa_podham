@@ -8,7 +8,7 @@ part 'membership_repository.g.dart';
 /// Wraps a ride's Firestore membership subcollection — the only class
 /// that should import `package:cloud_firestore`. Cross-feature: read by
 /// `home` (live rider tracking, via `riders_for_ride.dart`) and `rides`
-/// (a past ride's member list, in `PastRideDetailScreen`) alike, which is
+/// (a ride's member list, in `RideDetailScreen`) alike, which is
 /// what moved it here from `features/home/data/` in the first place.
 class MembershipRepository {
   MembershipRepository([FirebaseFirestore? firestore])

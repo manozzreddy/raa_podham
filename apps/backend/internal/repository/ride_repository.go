@@ -18,6 +18,7 @@ var ErrNotFound = errors.New("not found")
 // RideRepository persists rides and their membership.
 type RideRepository interface {
 	CreateRide(ctx context.Context, ride *model.Ride, host *model.Member) error
+	UpdateRide(ctx context.Context, ride *model.Ride) error
 	GetRideByID(ctx context.Context, id string) (*model.Ride, error)
 	GetRideByInviteCode(ctx context.Context, code string) (*model.Ride, error)
 	AddMember(ctx context.Context, rideID string, member *model.Member) error

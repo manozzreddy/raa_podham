@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../theme/theme.dart';
 import '../../../widgets/app_error_screen.dart';
+import '../../../widgets/loading_scaffold.dart';
 import '../models/ride.dart';
 import '../view_model/rides_view_model.dart';
 
@@ -22,7 +23,7 @@ class PastRidesScreen extends ConsumerWidget {
     final ridesAsync = ref.watch(ridesViewModelProvider);
 
     return ridesAsync.when(
-      loading: () => const _LoadingScaffold(),
+      loading: () => const LoadingScaffold(title: 'Past rides'),
       error: (error, stackTrace) => AppErrorScreen(
         error: error,
         stackTrace: stackTrace,
@@ -30,34 +31,15 @@ class PastRidesScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(ridesViewModelProvider),
       ),
       data: (rides) {
-        final pastRides = rides.where((ride) => ride.status == RideStatus.ended).toList()
-          ..sort(
-            (a, b) =>
-                (b.endedAt ?? b.createdAt).compareTo(a.endedAt ?? a.createdAt),
-          );
+        final pastRides =
+            rides.where((ride) => ride.status == RideStatus.ended).toList()
+              ..sort(
+                (a, b) => (b.endedAt ?? b.createdAt).compareTo(
+                  a.endedAt ?? a.createdAt,
+                ),
+              );
         return _PastRidesScaffold(pastRides: pastRides);
       },
-    );
-  }
-}
-
-class _LoadingScaffold extends StatelessWidget {
-  const _LoadingScaffold();
-
-  @override
-  Widget build(BuildContext context) {
-    final indicator = isCupertino
-        ? const CupertinoActivityIndicator()
-        : const CircularProgressIndicator();
-    if (isCupertino) {
-      return CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('Past rides')),
-        child: Center(child: indicator),
-      );
-    }
-    return Scaffold(
-      appBar: AppBar(title: const Text('Past rides')),
-      body: Center(child: indicator),
     );
   }
 }
@@ -75,7 +57,8 @@ class _PastRidesScaffold extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: pastRides.length,
             separatorBuilder: (context, index) => const SizedBox.shrink(),
-            itemBuilder: (context, index) => _PastRideTile(ride: pastRides[index]),
+            itemBuilder: (context, index) =>
+                _PastRideTile(ride: pastRides[index]),
           );
 
     if (isCupertino) {
@@ -126,7 +109,7 @@ class _PastRideTile extends StatelessWidget {
       formatPastDate(ride.endedAt ?? ride.createdAt),
     ].join(' · ');
     final leading = _PastRideThumbnail(photoUrl: ride.coverPhotoUrl);
-    void onTap() => context.push('/rides/past/detail', extra: ride);
+    void onTap() => context.push('/rides/detail', extra: ride);
 
     if (isCupertino) {
       return CupertinoListTile(

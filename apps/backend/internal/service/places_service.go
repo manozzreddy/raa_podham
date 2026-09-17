@@ -16,13 +16,13 @@ func NewPlacesService(places repository.PlacesRepository) *PlacesService {
 	return &PlacesService{places: places}
 }
 
-func (s *PlacesService) Autocomplete(ctx context.Context, input string) ([]repository.PlacePrediction, error) {
+func (s *PlacesService) Autocomplete(ctx context.Context, input string, originLat, originLng *float64) ([]repository.PlacePrediction, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
 		return nil, apperror.BadRequest("input is required")
 	}
 
-	predictions, err := s.places.Autocomplete(ctx, trimmed)
+	predictions, err := s.places.Autocomplete(ctx, trimmed, originLat, originLng)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}

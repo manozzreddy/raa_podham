@@ -60,22 +60,21 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAp_KqHrG46Y2fGfmL85UEpXCwc2rNkmeA',
-    appId: '1:21519965328:android:476e012890902de9a5cc15',
+    appId: '1:21519965328:android:290dbda3c7fb4e3ba5cc15',
     messagingSenderId: '21519965328',
     projectId: 'raa-podham',
-    databaseURL:
-        'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'raa-podham.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyANR_G3qcwc9KxEm33ZMj03hjELBxqchws',
-    appId: '1:21519965328:ios:bfe07f382f8ba922a5cc15',
+    appId: '1:21519965328:ios:f0c72caa4d389375a5cc15',
     messagingSenderId: '21519965328',
     projectId: 'raa-podham',
-    databaseURL:
-        'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'raa-podham.firebasestorage.app',
-    iosBundleId: 'com.dynamicarraytech.raaPodham',
+    androidClientId: '21519965328-p2u91m785uca54luj8le2fpkr2niv0n4.apps.googleusercontent.com',
+    iosClientId: '21519965328-mefmpsitcv4o2bftpr2do1scgingfc2k.apps.googleusercontent.com',
+    iosBundleId: 'in.manojreddy.raaPodham',
   );
 }

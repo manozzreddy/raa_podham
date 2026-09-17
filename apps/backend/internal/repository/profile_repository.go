@@ -12,4 +12,5 @@ import (
 // membership itself.
 type ProfileRepository interface {
 	GetProfile(ctx context.Context, uid string) (*model.UserProfile, error)
+	DeleteProfile(ctx context.Context, uid string) error
 }

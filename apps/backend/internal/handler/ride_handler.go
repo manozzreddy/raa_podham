@@ -61,6 +61,44 @@ func (h *RideHandler) CreateRide(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, dto.FromRide(ride))
 }
 
+func (h *RideHandler) UpdateRide(w http.ResponseWriter, r *http.Request) {
+	uid, ok := middleware.UIDFromContext(r.Context())
+	if !ok {
+		respondError(w, apperror.Forbidden("missing authenticated user"))
+		return
+	}
+
+	var req dto.UpdateRideRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, apperror.Internal(err))
+		return
+	}
+
+	var destination *model.Destination
+	if req.Destination != nil {
+		destination = &model.Destination{
+			Name: req.Destination.Name,
+			Lat:  req.Destination.Lat,
+			Lng:  req.Destination.Lng,
+		}
+	}
+
+	rideID := chi.URLParam(r, "id")
+	ride, err := h.rides.UpdateRide(r.Context(), uid, rideID, service.UpdateRideInput{
+		Name:          req.Name,
+		Destination:   destination,
+		ScheduledAt:   req.ScheduledAt,
+		Notes:         req.Notes,
+		CoverPhotoURL: req.CoverPhotoURL,
+	})
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, dto.FromRide(ride))
+}
+
 func (h *RideHandler) StartRide(w http.ResponseWriter, r *http.Request) {
 	uid, ok := middleware.UIDFromContext(r.Context())
 	if !ok {

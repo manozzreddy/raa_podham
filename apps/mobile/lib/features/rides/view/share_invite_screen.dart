@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../theme/theme.dart';
@@ -101,10 +100,19 @@ class ShareInviteScreen extends StatelessWidget {
         .showSnackBar(const SnackBar(content: Text('Invite code copied')));
   }
 
-  // `go`, not `push`: this screen (and CreateRideScreen under it) should
-  // never be back-navigable to once you've landed on the ride — there's
-  // nothing to come back and redo.
-  void _goHome(BuildContext context) => context.go('/home');
+  // Pops back to the existing HomeScreen (already alive at the bottom of
+  // the stack, never disposed) rather than context.go('/home') — go()
+  // replaces the whole navigation stack, which tears HomeScreen down and
+  // rebuilds it from scratch. That cancels HomeViewModel's in-flight
+  // GPS/RTDB position reporting before it ever completes (every rider
+  // stuck at 0 until the next cold start) and can also leave the rider
+  // sheet mid-layout if the replacement's transition animation is still
+  // running when it remounts. popUntil still means this screen (and
+  // CreateRideScreen under it) are never back-navigable to once you've
+  // landed on the ride — there's nothing to come back and redo.
+  void _goHome(BuildContext context) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
 }
 
 /// "is live" only for a ride that's actually active right now — a

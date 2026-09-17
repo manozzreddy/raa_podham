@@ -30,6 +30,17 @@ type JoinRideRequest struct {
 	InviteCode string `json:"inviteCode"`
 }
 
+// UpdateRideRequest is the host's edit-ride request — same shape as
+// CreateRideRequest, since the mobile form always submits the full
+// (pre-filled, then edited) set of fields rather than a partial patch.
+type UpdateRideRequest struct {
+	Name          string          `json:"name"`
+	Destination   *DestinationDTO `json:"destination,omitempty"`
+	ScheduledAt   *time.Time      `json:"scheduledAt,omitempty"`
+	Notes         string          `json:"notes,omitempty"`
+	CoverPhotoURL string          `json:"coverPhotoUrl,omitempty"`
+}
+
 type RideResponse struct {
 	ID            string          `json:"id"`
 	Name          string          `json:"name"`

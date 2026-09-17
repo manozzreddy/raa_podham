@@ -18,8 +18,15 @@ import 'share_invite_screen.dart';
 /// pinned to the bottom — not inline with the scrolling fields, so it's
 /// always reachable without scrolling down first. Hands off to
 /// [ShareInviteScreen] — not back to this screen — once the ride exists.
+///
+/// Doubles as the edit-ride form when [ride] is non-null: same fields,
+/// pre-filled from it (see [CreateRideViewModel.build]), submitting saves
+/// the edit and pops back to `RideDetailScreen` instead of pushing
+/// [ShareInviteScreen].
 class CreateRideScreen extends ConsumerStatefulWidget {
-  const CreateRideScreen({super.key});
+  const CreateRideScreen({super.key, this.ride});
+
+  final Ride? ride;
 
   @override
   ConsumerState<CreateRideScreen> createState() => _CreateRideScreenState();
@@ -32,6 +39,19 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
   final _notesController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Only [_nameController]/[_notesController] need this — free-typing
+    // fields the user edits directly, so (unlike destination/scheduled
+    // below) they're only ever set here, once, not resynced on every
+    // build afterwards. The initial state already has these prefilled
+    // when editing (see [CreateRideViewModel.build]).
+    final initial = ref.read(createRideViewModelProvider(widget.ride));
+    _nameController.text = initial.name;
+    _notesController.text = initial.notes;
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _destinationController.dispose();
@@ -42,29 +62,27 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(createRideViewModelProvider);
-    final notifier = ref.read(createRideViewModelProvider.notifier);
+    final provider = createRideViewModelProvider(widget.ride);
+    final state = ref.watch(provider);
+    final notifier = ref.read(provider.notifier);
+    final isEditing = widget.ride != null;
 
-    ref.listen<CreateRideUiState>(createRideViewModelProvider, (
-      previous,
-      next,
-    ) {
-      final text = next.selectedDestination?.displayName ?? '';
-      if (_destinationController.text != text) {
-        _destinationController.text = text;
-      }
+    ref.listen<CreateRideUiState>(provider, (previous, next) {
       if (next.error != null && next.error != previous?.error) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(next.error!)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(next.error!)));
       }
     });
 
-    // Set on every build, not just via ref.listen above (which never
-    // fires for the very first frame) — "Right away" needs to show as
-    // the field's actual content from the start, not just a greyed hint
-    // that could read as "nothing chosen yet" rather than "this is what
-    // happens if you don't pick a time".
+    // Set on every build, not just via a ref.listen (which never fires
+    // for the very first frame) — both fields need to show their actual
+    // content (including an edited ride's pre-filled destination, or
+    // "Right away" for no scheduled time) from the very first frame, not
+    // just a greyed hint that could read as "nothing chosen yet".
+    final destinationText = state.selectedDestination?.displayName ?? '';
+    if (_destinationController.text != destinationText) {
+      _destinationController.text = destinationText;
+    }
     final scheduledText = state.scheduledAt == null
         ? 'Right away'
         : formatScheduledTime(state.scheduledAt!);
@@ -80,16 +98,33 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
     }
 
     Future<void> submit() async {
-      final ride = await notifier.createRide();
+      final existingRide = widget.ride;
+      final ride = existingRide == null
+          ? await notifier.createRide()
+          : await notifier.updateRide(existingRide.id);
       if (!context.mounted || ride == null) return;
       ref.invalidate(ridesViewModelProvider);
-      context.push('/rides/share-invite', extra: ride);
+      if (existingRide == null) {
+        context.push('/rides/share-invite', extra: ride);
+      } else {
+        // Always a plain pop, even when clearing the scheduled time just
+        // flipped this ride active ("start right away") — RideDetailScreen
+        // (still underneath, never disposed) has its own guard for that
+        // case. A go('/home') here would replace the whole stack instead
+        // of just popping back onto it, tearing down and recreating
+        // HomeScreen — which cancels HomeViewModel's in-flight GPS/RTDB
+        // position reporting before it ever completes, leaving every
+        // rider (including self) stuck showing 0 riders until the next
+        // cold start. Same reasoning as RideDetailScreen's own pop below.
+        context.pop();
+      }
     }
 
     final canSubmit =
         state.name.trim().isNotEmpty &&
         state.selectedDestination != null &&
-        !state.isCreating;
+        !state.isCreating &&
+        !state.isUploadingPhoto;
 
     final nameField = isCupertino
         ? CupertinoTextField(
@@ -168,12 +203,13 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
             onChanged: notifier.setNotes,
           );
 
+    final submitLabel = isEditing ? 'Save changes' : 'Create ride';
     final submitButton = isCupertino
         ? CupertinoButton.filled(
             onPressed: canSubmit ? submit : null,
             child: state.isCreating
                 ? const CupertinoActivityIndicator()
-                : const Text('Create ride'),
+                : Text(submitLabel),
           )
         : FilledButton(
             onPressed: canSubmit ? submit : null,
@@ -183,7 +219,7 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Create ride'),
+                : Text(submitLabel),
           );
 
     final formContent = ListView(
@@ -203,7 +239,8 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
         const SizedBox(height: 20),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => _pickScheduledStart(context, notifier, state.scheduledAt),
+          onTap: () =>
+              _pickScheduledStart(context, notifier, state.scheduledAt),
           child: AbsorbPointer(child: scheduledField),
         ),
         if (state.scheduledAt != null)
@@ -228,10 +265,12 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
       ),
     );
 
+    final title = isEditing ? 'Edit ride' : 'New ride';
+
     if (isCupertino) {
       return CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
-          middle: const Text('New ride'),
+          middle: Text(title),
           leading: CupertinoNavigationBarBackButton(
             onPressed: () => context.pop(),
           ),
@@ -239,7 +278,10 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
         child: SafeArea(
           bottom: false,
           child: Column(
-            children: [Expanded(child: formContent), footer],
+            children: [
+              Expanded(child: formContent),
+              footer,
+            ],
           ),
         ),
       );
@@ -247,7 +289,7 @@ class _CreateRideScreenState extends ConsumerState<CreateRideScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New ride'),
+        title: Text(title),
         leading: BackButton(onPressed: () => context.pop()),
       ),
       body: formContent,
@@ -357,27 +399,50 @@ class _ClearScheduledHint extends StatelessWidget {
         ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
         : Theme.of(context).textTheme.bodySmall;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: GestureDetector(
-        onTap: onClear,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isCupertino ? CupertinoIcons.clear_circled_solid : Icons.cancel,
-              size: 14,
-              color: style?.color?.withValues(alpha: 0.6),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'Start right away instead',
-              style: style?.copyWith(color: style.color?.withValues(alpha: 0.7)),
-            ),
-          ],
-        ),
+    // The tappable Padding is inside the button (not the other way
+    // around) — otherwise the hit area is just the Row's own tight,
+    // text-height bounds, which is too thin a target to reliably tap.
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isCupertino ? CupertinoIcons.clear_circled_solid : Icons.cancel,
+            size: 14,
+            color: style?.color?.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Start right away instead',
+            style: style?.copyWith(color: style.color?.withValues(alpha: 0.7)),
+          ),
+        ],
       ),
     );
+
+    // Same platform tap-feedback split as _AddPhotoTarget/_RemovePhotoButton
+    // below — Material ink or Cupertino's opacity dim, rather than the
+    // silent GestureDetector this used to be.
+    final button = isCupertino
+        ? CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: onClear,
+            child: content,
+          )
+        : Material(
+            color: Colors.transparent,
+            child: InkWell(onTap: onClear, child: content),
+          );
+
+    // Being a direct ListView child, this would otherwise be handed the
+    // full row width as a tight constraint — both CupertinoButton and
+    // InkWell fill whatever box they're given, so without Align here the
+    // clickable/ink area stretches across the whole row instead of
+    // hugging just the icon+text (plus content's own padding). Align
+    // loosens that constraint, so the button shrink-wraps to its content
+    // and only that shrunk box sits flush left.
+    return Align(alignment: Alignment.centerLeft, child: button);
   }
 }
 

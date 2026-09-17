@@ -69,8 +69,35 @@ class CreateRideUiState {
 
 @riverpod
 class CreateRideViewModel extends _$CreateRideViewModel {
+  /// Null for a brand-new ride (today's default empty form); the ride
+  /// being edited otherwise, in which case [build] pre-fills every field
+  /// from it and [submit] (in `CreateRideScreen`) calls [updateRide]
+  /// instead of [createRide].
   @override
-  CreateRideUiState build() => const CreateRideUiState();
+  CreateRideUiState build(Ride? existingRide) {
+    final ride = existingRide;
+    if (ride == null) return const CreateRideUiState();
+
+    final destination = ride.destination;
+    return CreateRideUiState(
+      name: ride.name,
+      notes: ride.notes ?? '',
+      scheduledAt: ride.scheduledAt,
+      coverPhotoUrl: ride.coverPhotoUrl,
+      selectedDestination: destination == null
+          ? null
+          : DestinationSuggestion(
+              displayName: destination.name,
+              // Only used for a suggestion row's secondary line in
+              // DestinationSearchScreen's own list — never shown once a
+              // destination is selected, so there's nothing to backfill
+              // it from here.
+              secondaryText: '',
+              lat: destination.lat,
+              lng: destination.lng,
+            ),
+    );
+  }
 
   void setName(String name) {
     state = state.copyWith(name: name);
@@ -148,12 +175,54 @@ class CreateRideViewModel extends _$CreateRideViewModel {
             notes: state.notes.trim(),
             coverPhotoUrl: state.coverPhotoUrl,
           );
+      // The screen could have been popped while this request was
+      // pending, disposing this auto-dispose provider — touching `state`
+      // after that throws UnmountedRefException.
+      if (!ref.mounted) return null;
       state = state.copyWith(isCreating: false);
       return ride;
     } catch (_) {
+      if (!ref.mounted) return null;
       state = state.copyWith(
         isCreating: false,
-        error: 'Could not create the ride. Please try again.',
+        error: "Couldn't create the ride. Try again.",
+      );
+      return null;
+    }
+  }
+
+  /// [existingRide]'s edit-and-save counterpart to [createRide] — same
+  /// validation/error-handling shape, called instead of it once
+  /// [existingRide] is non-null.
+  Future<Ride?> updateRide(String rideId) async {
+    final destination = state.selectedDestination;
+    if (destination == null) {
+      state = state.copyWith(error: 'Choose a destination for the ride.');
+      return null;
+    }
+
+    state = state.copyWith(isCreating: true, clearError: true);
+    try {
+      final ride = await ref
+          .read(rideRepositoryProvider)
+          .updateRide(
+            rideId: rideId,
+            name: state.name.trim(),
+            destination: destination,
+            scheduledAt: state.scheduledAt,
+            notes: state.notes.trim(),
+            coverPhotoUrl: state.coverPhotoUrl,
+          );
+      // Same guard, same reason as createRide — the screen could have
+      // been popped while this request was pending.
+      if (!ref.mounted) return null;
+      state = state.copyWith(isCreating: false);
+      return ride;
+    } catch (_) {
+      if (!ref.mounted) return null;
+      state = state.copyWith(
+        isCreating: false,
+        error: "Couldn't save your changes. Try again.",
       );
       return null;
     }

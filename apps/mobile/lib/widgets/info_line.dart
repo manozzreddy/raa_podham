@@ -1,12 +1,11 @@
 import 'package:flutter/widgets.dart';
 
-/// An icon plus a line of text — used by every "quick look" detail sheet
-/// in the app (`RiderInfoSheet`, `UpcomingRideDetailSheet`,
-/// `PastRidesScreen`'s own detail sheet) for a labeled fact like a
-/// distance, a scheduled time, or a destination. Promoted here once a
-/// second feature needed the exact same shape a third file was about to
-/// duplicate again — see `.agents/rules/architecture.md`'s widget-sharing
-/// rule.
+/// An icon plus a line of text — used by every "quick look" detail
+/// view in the app (`RiderInfoSheet`, `RideDetailScreen`) for a labeled
+/// fact like a distance, a scheduled time, or a destination. Promoted
+/// here once a second feature needed the exact same shape a third file
+/// was about to duplicate again — see `.agents/rules/architecture.md`'s
+/// widget-sharing rule.
 class InfoLine extends StatelessWidget {
   const InfoLine({
     super.key,

@@ -81,7 +81,7 @@ void main() {
       );
 
       container
-          .read(createRideViewModelProvider.notifier)
+          .read(createRideViewModelProvider(null).notifier)
           .selectDestination(_destination);
       await tester.pump();
       expect(createButton().onPressed, isNotNull);

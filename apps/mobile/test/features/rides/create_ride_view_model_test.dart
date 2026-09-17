@@ -68,6 +68,37 @@ class _FakeRideRepository implements RideRepository {
   }
 
   @override
+  Future<Ride> updateRide({
+    required String rideId,
+    required String name,
+    DestinationSuggestion? destination,
+    DateTime? scheduledAt,
+    String? notes,
+    String? coverPhotoUrl,
+  }) async {
+    return Ride(
+      id: rideId,
+      name: name,
+      inviteCode: 'FAKE01',
+      hostId: 'fake-host-uid',
+      status: scheduledAt != null && scheduledAt.isAfter(DateTime.now())
+          ? RideStatus.scheduled
+          : RideStatus.active,
+      destination: destination == null
+          ? null
+          : RideDestination(
+              name: destination.displayName,
+              lat: destination.lat,
+              lng: destination.lng,
+            ),
+      scheduledAt: scheduledAt,
+      notes: notes,
+      coverPhotoUrl: coverPhotoUrl,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  @override
   Future<Ride> joinRide(String inviteCode) => throw UnimplementedError();
 
   @override
@@ -113,36 +144,36 @@ void main() {
     // .read() alone doesn't hold a subscription, so without this listener
     // Riverpod disposes the notifier mid-createRide (across its awaited
     // Future.delayed) before it can set its own final state.
-    container.listen(createRideViewModelProvider, (previous, next) {});
+    container.listen(createRideViewModelProvider(null), (previous, next) {});
   });
 
   tearDown(() => container.dispose());
 
   test('selectDestination sets the chosen destination', () {
-    final notifier = container.read(createRideViewModelProvider.notifier);
+    final notifier = container.read(createRideViewModelProvider(null).notifier);
 
     notifier.selectDestination(_destination);
 
     expect(
-      container.read(createRideViewModelProvider).selectedDestination,
+      container.read(createRideViewModelProvider(null)).selectedDestination,
       _destination,
     );
   });
 
   test('createRide fails with an error, and does not call the repository, if no destination is set', () async {
-    final notifier = container.read(createRideViewModelProvider.notifier);
+    final notifier = container.read(createRideViewModelProvider(null).notifier);
     notifier.setName('Sunday Sunrise Ride');
 
     final ride = await notifier.createRide();
 
     expect(ride, isNull);
-    expect(container.read(createRideViewModelProvider).error, isNotNull);
+    expect(container.read(createRideViewModelProvider(null)).error, isNotNull);
   });
 
   test(
     'createRide succeeds once both a name and a destination are set',
     () async {
-      final notifier = container.read(createRideViewModelProvider.notifier);
+      final notifier = container.read(createRideViewModelProvider(null).notifier);
       notifier.setName('Sunday Sunrise Ride');
       notifier.selectDestination(_destination);
 
@@ -151,21 +182,21 @@ void main() {
       expect(ride, isNotNull);
       expect(ride!.name, 'Sunday Sunrise Ride');
       expect(ride.destination?.name, _destination.displayName);
-      expect(container.read(createRideViewModelProvider).error, isNull);
-      expect(container.read(createRideViewModelProvider).isCreating, isFalse);
+      expect(container.read(createRideViewModelProvider(null)).error, isNull);
+      expect(container.read(createRideViewModelProvider(null)).isCreating, isFalse);
     },
   );
 
   test('setNotes and setScheduledAt are reflected in state and passed through to createRide', () async {
-    final notifier = container.read(createRideViewModelProvider.notifier);
+    final notifier = container.read(createRideViewModelProvider(null).notifier);
     final scheduledAt = DateTime.now().add(const Duration(days: 1));
     notifier.setName('Sunday Sunrise Ride');
     notifier.selectDestination(_destination);
     notifier.setNotes('Bring rain gear');
     notifier.setScheduledAt(scheduledAt);
 
-    expect(container.read(createRideViewModelProvider).notes, 'Bring rain gear');
-    expect(container.read(createRideViewModelProvider).scheduledAt, scheduledAt);
+    expect(container.read(createRideViewModelProvider(null)).notes, 'Bring rain gear');
+    expect(container.read(createRideViewModelProvider(null)).scheduledAt, scheduledAt);
 
     final ride = await notifier.createRide();
 
@@ -176,11 +207,11 @@ void main() {
   });
 
   test('setScheduledAt(null) clears a previously picked time', () {
-    final notifier = container.read(createRideViewModelProvider.notifier);
+    final notifier = container.read(createRideViewModelProvider(null).notifier);
     notifier.setScheduledAt(DateTime.now().add(const Duration(days: 1)));
 
     notifier.setScheduledAt(null);
 
-    expect(container.read(createRideViewModelProvider).scheduledAt, isNull);
+    expect(container.read(createRideViewModelProvider(null)).scheduledAt, isNull);
   });
 }

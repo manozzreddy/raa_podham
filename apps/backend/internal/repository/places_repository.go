@@ -8,6 +8,9 @@ type PlacePrediction struct {
 	PlaceID       string
 	DisplayName   string
 	SecondaryText string
+	// DistanceMeters is nil unless Autocomplete was given an origin —
+	// Google only computes this when one's supplied.
+	DistanceMeters *int
 }
 
 // PlacesRepository looks up destination candidates and resolves one to
@@ -16,6 +19,7 @@ type PlacePrediction struct {
 // same reason RideRepository does: the service layer is testable
 // against a hand-written fake instead of a real network call.
 type PlacesRepository interface {
-	Autocomplete(ctx context.Context, input string) ([]PlacePrediction, error)
+	// originLat/originLng are both nil for a plain, distance-free search.
+	Autocomplete(ctx context.Context, input string, originLat, originLng *float64) ([]PlacePrediction, error)
 	ResolveLocation(ctx context.Context, placeID string) (lat, lng float64, err error)
 }

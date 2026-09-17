@@ -8,17 +8,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:21519965328:android:476e012890902de9a5cc15",
+        "mobilesdk_app_id": "1:21519965328:android:290dbda3c7fb4e3ba5cc15",
         "android_client_info": {
-          "package_name": "com.dynamicarraytech.raa_podham"
+          "package_name": "in.manojreddy.raa_podham"
         }
       },
       "oauth_client": [
         {
-          "client_id": "21519965328-p2u91m785uca54luj8le2fpkr2niv0n4.apps.googleusercontent.com",
+          "client_id": "21519965328-qlesg09sgsktlt2nka8mabo0d6sjgv7u.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.dynamicarraytech.raa_podham",
+            "package_name": "in.manojreddy.raa_podham",
             "certificate_hash": "55989486766ddfa21d5448327c28552e6a6b774d"
           }
         },

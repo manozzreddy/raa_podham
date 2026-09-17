@@ -21,6 +21,7 @@ type Config struct {
 	Port               string
 	FirebaseProjectID  string
 	RTDBURL            string
+	StorageBucket      string
 	GooglePlacesAPIKey string
 	Env                string
 }
@@ -39,6 +40,7 @@ func Load() (*Config, error) {
 		Port:               getEnv("PORT", "8080"),
 		FirebaseProjectID:  os.Getenv("FIREBASE_PROJECT_ID"),
 		RTDBURL:            os.Getenv("RTDB_URL"),
+		StorageBucket:      os.Getenv("FIREBASE_STORAGE_BUCKET"),
 		GooglePlacesAPIKey: os.Getenv("GOOGLE_PLACES_API_KEY"),
 		Env:                getEnv("ENV", "development"),
 	}
@@ -48,6 +50,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Env == "production" && cfg.GooglePlacesAPIKey == "" {
 		return nil, fmt.Errorf("GOOGLE_PLACES_API_KEY must be set in production")
+	}
+	if cfg.Env == "production" && cfg.StorageBucket == "" {
+		return nil, fmt.Errorf("FIREBASE_STORAGE_BUCKET must be set in production")
 	}
 
 	return cfg, nil

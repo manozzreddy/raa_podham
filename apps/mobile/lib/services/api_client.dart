@@ -14,7 +14,7 @@ const String _defaultApiBaseUrl = 'https://raa-podham-api-vf6ipdg7dq-el.a.run.ap
 /// already binds to all interfaces (see internal/config's HOST var), so
 /// nothing on that side needs to change if this IP does; re-check it
 /// with `ipconfig` if the dev machine reconnects to a different network.
-const String _localApiBaseUrl = 'http://192.168.1.100:8080';
+const String _localApiBaseUrl = 'http://192.168.1.101:8080';
 
 /// Flip to true to make a debug build hit the deployed backend instead
 /// of the local one — e.g. to test against real data without running
@@ -61,6 +61,9 @@ class ApiClient {
 
   Future<Response<T>> post<T>(String path, {Object? data}) =>
       _dio.post<T>(path, data: data);
+
+  Future<Response<T>> patch<T>(String path, {Object? data}) =>
+      _dio.patch<T>(path, data: data);
 
   Future<Response<T>> delete<T>(String path, {Object? data}) =>
       _dio.delete<T>(path, data: data);

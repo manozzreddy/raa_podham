@@ -10,6 +10,7 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
 	"firebase.google.com/go/v4/db"
+	fbstorage "firebase.google.com/go/v4/storage"
 
 	"github.com/dynamicarraytech/raa-podham/backend/internal/config"
 )
@@ -20,8 +21,9 @@ import (
 // application-default login`.
 func New(ctx context.Context, cfg *config.Config) (*firebase.App, error) {
 	app, err := firebase.NewApp(ctx, &firebase.Config{
-		ProjectID:   cfg.FirebaseProjectID,
-		DatabaseURL: cfg.RTDBURL,
+		ProjectID:     cfg.FirebaseProjectID,
+		DatabaseURL:   cfg.RTDBURL,
+		StorageBucket: cfg.StorageBucket,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initializing firebase app: %w", err)
@@ -53,6 +55,16 @@ func NewRTDBClient(ctx context.Context, app *firebase.App) (*db.Client, error) {
 	client, err := app.Database(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("initializing rtdb client: %w", err)
+	}
+	return client, nil
+}
+
+// NewStorageClient returns a Firebase Storage client, scoped to the
+// project's default bucket.
+func NewStorageClient(ctx context.Context, app *firebase.App) (*fbstorage.Client, error) {
+	client, err := app.Storage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("initializing storage client: %w", err)
 	}
 	return client, nil
 }
