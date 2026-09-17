@@ -63,7 +63,7 @@ jobs:
             --source . \
             --region asia-south1 \
             --project raa-podham \
-            --set-env-vars "FIREBASE_PROJECT_ID=raa-podham,RTDB_URL=https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app,ENV=production" \
+            --set-env-vars "FIREBASE_PROJECT_ID=raa-podham,RTDB_URL=https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app,FIREBASE_STORAGE_BUCKET=raa-podham.firebasestorage.app,ENV=production" \
             --set-secrets "GOOGLE_PLACES_API_KEY=GOOGLE_PLACES_AND_ROUTES_API_KEY:latest" \
             --quiet
 
