@@ -5,6 +5,7 @@ import '../../../theme/theme.dart';
 import '../../../widgets/info_line.dart';
 import '../../../widgets/sheet_drag_handle.dart';
 import '../view_model/home_view_model.dart';
+import 'reached_badge.dart';
 import 'rider_avatar_chip.dart';
 import 'sheet_action_button.dart';
 
@@ -76,6 +77,10 @@ class RiderInfoSheet extends StatelessWidget {
                           if (details.isHost) ...[
                             const SizedBox(width: 8),
                             const _HostChip(),
+                          ],
+                          if (details.hasReachedDestination) ...[
+                            const SizedBox(width: 8),
+                            const ReachedChip(),
                           ],
                         ],
                       ),

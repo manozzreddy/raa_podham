@@ -58,9 +58,7 @@ class NoRideSheet extends StatelessWidget {
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [Text('Start riding', style: headerStyle)],
-            ),
+            child: Row(children: [Text('Start riding', style: headerStyle)]),
           ),
           const SizedBox(height: 16),
           Padding(
@@ -87,15 +85,13 @@ class NoRideSheet extends StatelessWidget {
           ),
           Expanded(
             child: upcomingRides.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Text(
-                        "You're not in a ride yet. Create one or join with an invite code.",
-                        textAlign: TextAlign.center,
-                        style: bodyStyle?.copyWith(
-                          color: bodyStyle.color?.withValues(alpha: 0.7),
-                        ),
+                ? Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      "You're not in a ride yet. Create one or join with an invite code.",
+                      textAlign: TextAlign.center,
+                      style: bodyStyle?.copyWith(
+                        color: bodyStyle.color?.withValues(alpha: 0.7),
                       ),
                     ),
                   )

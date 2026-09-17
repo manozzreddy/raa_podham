@@ -3,13 +3,15 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/theme.dart';
 import '../../../widgets/rider_avatar_circle.dart';
+import 'reached_badge.dart';
 
 export '../../../widgets/rider_avatar_circle.dart';
 
-/// Collapsed-sheet chip: a rider's avatar with a status dot bottom-right
-/// (and a host badge top-left, if they're hosting), a distance label
-/// underneath (e.g. "You", "0.6 km") — tappable to recenter the map on
-/// them, when [onTap] is given.
+/// Collapsed-sheet chip: a rider's avatar with a status dot bottom-right,
+/// a host badge top-left (if they're hosting), and a reached-destination
+/// badge top-right (if they are), a distance label underneath (e.g.
+/// "You", "0.6 km") — tappable to recenter the map on them, when [onTap]
+/// is given.
 class RiderAvatarChip extends StatelessWidget {
   const RiderAvatarChip({
     super.key,
@@ -20,6 +22,7 @@ class RiderAvatarChip extends StatelessWidget {
     required this.isOnline,
     this.isSelf = false,
     this.isHost = false,
+    this.hasReachedDestination = false,
     this.onTap,
   });
 
@@ -33,6 +36,7 @@ class RiderAvatarChip extends StatelessWidget {
   final bool isOnline;
   final bool isSelf;
   final bool isHost;
+  final bool hasReachedDestination;
   final VoidCallback? onTap;
 
   static const double _avatarDiameter = 48;
@@ -73,6 +77,12 @@ class RiderAvatarChip extends StatelessWidget {
                       left: -2,
                       top: -2,
                       child: HostBadge(ringColor: sheetBackground),
+                    ),
+                  if (hasReachedDestination)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: ReachedBadge(ringColor: sheetBackground),
                     ),
                   if (isOnline)
                     Positioned(

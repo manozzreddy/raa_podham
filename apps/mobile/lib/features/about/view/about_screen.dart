@@ -35,6 +35,8 @@ class AboutScreen extends StatelessWidget {
               SizedBox(height: 24),
               _DescriptionSection(),
               SizedBox(height: 28),
+              _ContactSection(),
+              SizedBox(height: 12),
               _SupportSection(),
             ],
           ),
@@ -122,6 +124,69 @@ class _DescriptionSection extends StatelessWidget {
       'with no in-app navigation and no extra noise.',
       textAlign: TextAlign.center,
       style: bodyStyle?.copyWith(height: 1.4),
+    );
+  }
+}
+
+/// Opens the device's mail composer addressed at the maintainer, with a
+/// fixed subject line — a single action, so it launches directly rather
+/// than opening a sheet first (unlike [_SupportSection], which has an
+/// actual choice to offer: pay vs. copy).
+class _ContactSection extends StatelessWidget {
+  const _ContactSection();
+
+  static const String _contactEmail = 'manojreddygangarapu@gmail.com';
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCupertino) {
+      return CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: () => _sendEmail(context),
+        child: const _ContactLabel(),
+      );
+    }
+    return TextButton(
+      onPressed: () => _sendEmail(context),
+      child: const _ContactLabel(),
+    );
+  }
+
+  Future<void> _sendEmail(BuildContext context) async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: _contactEmail,
+    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't open an email app. Try again.")),
+      );
+    }
+  }
+}
+
+class _ContactLabel extends StatelessWidget {
+  const _ContactLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = isCupertino
+        ? CupertinoTheme.of(context).textTheme.actionTextStyle
+        : Theme.of(context).textTheme.labelLarge
+              ?.copyWith(color: AppColors.sunriseAmber);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isCupertino ? CupertinoIcons.mail : Icons.mail_outline,
+          size: 18,
+          color: AppColors.sunriseAmber,
+        ),
+        const SizedBox(width: 8),
+        Text('Contact me', style: style),
+      ],
     );
   }
 }

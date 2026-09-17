@@ -15,6 +15,7 @@ import '../../../widgets/loading_scaffold.dart';
 import '../../rides/models/ride.dart';
 import '../../rides/view_model/rides_view_model.dart';
 import '../data/riders_for_ride.dart';
+import '../models/destination_proximity.dart';
 import '../models/rider.dart';
 import '../view_model/home_view_model.dart';
 import '../view_model/no_active_ride_view_model.dart';
@@ -25,17 +26,18 @@ import '../widgets/info_icon_button.dart';
 import '../widgets/map_fab_stack.dart';
 import '../widgets/map_top_icons.dart';
 import '../widgets/no_ride_sheet.dart';
+import '../widgets/reached_badge.dart';
 import '../widgets/rider_avatar_chip.dart';
 import '../widgets/rider_info_sheet.dart';
 import '../widgets/rider_sheet.dart';
 
 /// The sheet's resting (and floor) extent while riding — smaller than
 /// [_noActiveRideSheetExtent] since the map itself, not the sheet,
-/// carries most of the attention during an active ride. Can't go much
-/// lower than this: [RiderSheet]'s fixed-height content (drag handle,
-/// header row, Invite/End-ride row) alone runs ~175 logical pixels, and
-/// below ~0.20 that no longer fits before its `Expanded` rider list even
-/// gets a look — see the RenderFlex overflow this hit at 0.16.
+/// carries most of the attention during an active ride. [RiderSheet]'s
+/// whole body (drag handle, header, action row, rider content) is one
+/// scrollable now, so there's no fixed-content height this floor is
+/// forced to clear — 0.20 is a UX choice (enough to read the header and
+/// the collapsed rider chips without dragging), not a layout constraint.
 const double _activeRideSheetExtent = 0.20;
 
 /// The sheet's resting (and floor) extent with no active ride — a bit
@@ -232,6 +234,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
     });
 
+    // Fires at most once per ride — see HomeUiState.showReachedDestinationPrompt.
+    ref.listen<AsyncValue<HomeUiState>>(provider, (previous, next) {
+      final show = next.value?.showReachedDestinationPrompt ?? false;
+      final wasShowing = previous?.value?.showReachedDestinationPrompt ?? false;
+      if (show && !wasShowing) {
+        unawaited(_confirmStopSharingAfterReached(context, viewModel));
+      }
+    });
+
     return stateAsync.when(
       loading: () => const LoadingScaffold(),
       error: (error, stackTrace) => AppErrorScreen(
@@ -284,9 +295,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       scaffoldKey: _scaffoldKey,
       sheetRestExtent: _activeRideSheetExtent,
       maxSheetExtent: maxSheetExtent,
+      // isLocationUnavailable takes priority — it's a broken state,
+      // whereas isSharingPaused was a deliberate choice with its own way
+      // back, so it's the less urgent of the two if both were somehow
+      // true at once.
       banner: state.isLocationUnavailable
           ? _LocationDisabledBanner(onTurnOnTap: viewModel.openLocationSettings)
-          : null,
+          : (state.isSharingPaused
+                ? _SharingPausedBanner(onResumeTap: viewModel.resumeSharingLocation)
+                : null),
       fabStack: MapFabStack(
         isFollowingUser: state.isFollowingUser,
         onRecenter: viewModel.recenter,
@@ -564,6 +581,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// Offers to stop sharing once this device's own position first lands
+  /// within the destination radius — triggered by
+  /// [HomeUiState.showReachedDestinationPrompt], which only ever flips
+  /// true once per ride. Neither choice is styled destructive: stopping
+  /// sharing is reversible (see [_SharingPausedBanner]'s Resume action),
+  /// same reasoning `dialogs.md` already applies to sign-out.
+  Future<void> _confirmStopSharingAfterReached(
+    BuildContext context,
+    HomeViewModel viewModel,
+  ) async {
+    const title = "You've reached the destination";
+    const message = 'Would you like to stop sharing your location with the group?';
+
+    void keepSharing() => viewModel.dismissReachedDestinationPrompt();
+    void stopSharing() {
+      viewModel.dismissReachedDestinationPrompt();
+      viewModel.stopSharingLocation();
+    }
+
+    if (isCupertino) {
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text(title),
+          content: const Text(message),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                keepSharing();
+              },
+              child: const Text('Keep sharing'),
+            ),
+            CupertinoDialogAction(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                stopSharing();
+              },
+              child: const Text('Stop sharing'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(title),
+        content: const Text(message),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              keepSharing();
+            },
+            child: const Text('Keep sharing'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              stopSharing();
+            },
+            child: const Text('Stop sharing'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Confirms before the rider sheet's CTA actually fires — ending kills
   /// live tracking for the whole group, and even just leaving stops this
   /// device's own sharing, so neither should happen on a single
@@ -779,6 +867,60 @@ class _LocationDisabledBanner extends StatelessWidget {
   }
 }
 
+/// Shown after this device stops sharing by choice (see
+/// [HomeViewModel.stopSharingLocation]) — the way back in, unlike
+/// [_LocationDisabledBanner]'s permission/services-off case, which is
+/// resolved from the device's own Settings instead.
+class _SharingPausedBanner extends StatelessWidget {
+  const _SharingPausedBanner({required this.onResumeTap});
+
+  final VoidCallback onResumeTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textStyle = isCupertino
+        ? CupertinoTheme.of(context).textTheme.tabLabelTextStyle
+        : Theme.of(context).textTheme.bodySmall;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.predawnIndigo,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isCupertino
+                ? CupertinoIcons.location_slash
+                : Icons.location_disabled,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              "Location sharing is paused. Others can't see your location.",
+              style: textStyle?.copyWith(color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onResumeTap,
+            child: Text(
+              'Resume',
+              style: textStyle?.copyWith(
+                color: AppColors.sunRimGold,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The shared shell for both home states: full-bleed map, floating menu
 /// and profile icons up top, right-edge FAB stack, and a draggable sheet
 /// — only [map], [fabStack] and the sheet's own content ever differ
@@ -875,13 +1017,20 @@ class _MapHomeScaffold extends StatelessWidget {
             minExtent: sheetRestExtent * screenHeight,
             maxExtent: maxSheetExtent * screenHeight,
             fit: SheetFit.expand,
-            resizable: true,
-            minResizableExtent: sheetRestExtent * screenHeight,
-            // Only two rest positions — collapsed and (almost) fully
-            // open, same as the old snapSizes: [initial, max] — so this
-            // is a toggle between them, not freeform stops in between.
-            // Shared with every scrollable inside [sheet] itself — see
-            // homeSheetSnapPhysics's own doc comment for why.
+            // Not resizable: `sheet`'s content is a fixed-height card
+            // whose *visible portion* changes as it's dragged, not a box
+            // that should shrink its own height to match. `resizable:
+            // true` did that literally — re-laying `sheet` out at
+            // `max(currentDragPixels, minExtent)` on every single drag
+            // frame — which fought hard enough with RiderSheet's own
+            // per-frame rebuild (it watches this same live position too,
+            // to swap collapsed/expanded content) to break the snap
+            // decision at release, leaving the sheet stuck wherever the
+            // finger lifted instead of settling at min/max. `SheetFit
+            // .expand` alone already gives a stable full-height child,
+            // with the viewport revealing more or less of it on drag —
+            // the same model a plain scrollable, and SnapSheetPhysics,
+            // already handle reliably.
             physics: homeSheetSnapPhysics,
             backgroundColor: Colors.transparent,
             elevation: 0,
@@ -992,10 +1141,22 @@ class _RideMap extends ConsumerWidget {
             // drawing the selected marker (and its label) last is what
             // raises it above anyone it'd otherwise overlap.
             ...unselectedRiders.map(
-              (rider) => _buildMarker(rider, isSelected: false),
+              (rider) => _buildMarker(
+                rider,
+                isSelected: false,
+                hasReachedDestination:
+                    destinationPin != null &&
+                    isNearDestination(rider.location, destinationPin),
+              ),
             ),
             if (selectedRider != null) ...[
-              _buildMarker(selectedRider, isSelected: true),
+              _buildMarker(
+                selectedRider,
+                isSelected: true,
+                hasReachedDestination:
+                    destinationPin != null &&
+                    isNearDestination(selectedRider.location, destinationPin),
+              ),
               _buildCallout(selectedRider),
             ],
           ],
@@ -1007,17 +1168,36 @@ class _RideMap extends ConsumerWidget {
     );
   }
 
-  Marker _buildMarker(Rider rider, {required bool isSelected}) {
+  Marker _buildMarker(
+    Rider rider, {
+    required bool isSelected,
+    required bool hasReachedDestination,
+  }) {
     final diameter = isSelected ? _selectedRiderDiameter : _riderDiameter;
-    final avatar = RiderAvatarCircle(
-      label: rider.displayName,
-      photoUrl: rider.photoUrl,
-      diameter: diameter,
-      background: rider.isSelf
-          ? AppColors.sunriseAmber
-          : AppColors.riderFallbackColor(rider.riderId),
-      border: Border.all(color: Colors.white, width: 2),
-      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+    final avatar = Stack(
+      // Unlike RiderAvatarChip's badge (which pokes outside the avatar's
+      // own bounds), this one stays flush inside — a Marker's width/height
+      // is flutter_map's actual hit/paint box, so anything drawn outside
+      // it here would just get clipped.
+      clipBehavior: Clip.none,
+      children: [
+        RiderAvatarCircle(
+          label: rider.displayName,
+          photoUrl: rider.photoUrl,
+          diameter: diameter,
+          background: rider.isSelf
+              ? AppColors.sunriseAmber
+              : AppColors.riderFallbackColor(rider.riderId),
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+        ),
+        if (hasReachedDestination)
+          const Positioned(
+            right: 0,
+            bottom: 0,
+            child: ReachedBadge(ringColor: Colors.white),
+          ),
+      ],
     );
     return Marker(
       point: rider.location,

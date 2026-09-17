@@ -47,19 +47,52 @@ class PositionRepository {
   /// (`database.rules.json`) only lets `uid` write its own entry, so this
   /// can never be used to spoof another rider's position. `updatedAt` is
   /// how [Rider.merge] tells a genuinely live rider from a stale one
-  /// nobody's marked offline yet.
+  /// nobody's marked offline yet. An `update`, not a `set` — a `set`
+  /// would wipe out [resolveStartLocation]'s `startLat`/`startLng`/
+  /// `startedAt` on this same node the next time this fires.
   Future<void> reportPosition({
     required String rideId,
     required String uid,
     required double lat,
     required double lng,
   }) {
-    return _database.ref('rides/$rideId/positions/$uid').set({
+    return _database.ref('rides/$rideId/positions/$uid').update({
       'lat': lat,
       'lng': lng,
       'isOnline': true,
       'updatedAt': ServerValue.timestamp,
     });
+  }
+
+  /// Resolves this rider's persisted starting location for [rideId] —
+  /// recording ([lat], [lng]) as that start the first time this is
+  /// called for them (whenever this node has no start on record yet),
+  /// and returning whichever start ends up on file afterward. A later
+  /// call's ([lat], [lng]) — wherever the rider happens to be *then* —
+  /// never overwrites an existing start; that's the whole point of
+  /// persisting it, so reopening the app mid-ride doesn't silently move
+  /// "start" to wherever the rider is by the time they reopen it.
+  Future<LatLng> resolveStartLocation({
+    required String rideId,
+    required String uid,
+    required double lat,
+    required double lng,
+  }) async {
+    final positionRef = _database.ref('rides/$rideId/positions/$uid');
+    final existing = (await positionRef.get()).value;
+    if (existing is Map) {
+      final startLat = existing['startLat'] as num?;
+      final startLng = existing['startLng'] as num?;
+      if (startLat != null && startLng != null) {
+        return LatLng(startLat.toDouble(), startLng.toDouble());
+      }
+    }
+    await positionRef.update({
+      'startLat': lat,
+      'startLng': lng,
+      'startedAt': ServerValue.timestamp,
+    });
+    return LatLng(lat, lng);
   }
 
   /// Arms a server-side cleanup for this device's own position entry,
@@ -78,6 +111,16 @@ class PositionRepository {
     return _database
         .ref('rides/$rideId/positions/$uid')
         .onDisconnect()
+        .update({'isOnline': false});
+  }
+
+  /// Immediately marks this device's own position entry offline, without
+  /// removing it — the same effect [keepOnlineFlagInSyncOnDisconnect]
+  /// produces on an ungraceful disconnect, but fired right away for a
+  /// deliberate "stop sharing" choice instead of armed for later.
+  Future<void> markOffline({required String rideId, required String uid}) {
+    return _database
+        .ref('rides/$rideId/positions/$uid')
         .update({'isOnline': false});
   }
 

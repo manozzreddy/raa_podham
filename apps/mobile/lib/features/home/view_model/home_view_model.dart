@@ -17,6 +17,7 @@ import '../../rides/models/ride.dart';
 import '../data/device_location.dart';
 import '../data/position_repository.dart';
 import '../data/riders_for_ride.dart';
+import '../models/destination_proximity.dart';
 import '../models/rider.dart';
 
 part 'home_view_model.g.dart';
@@ -38,6 +39,8 @@ class HomeUiState {
     required this.isFollowingUser,
     required this.isLocationUnavailable,
     required this.showBackgroundSharingPrompt,
+    required this.showReachedDestinationPrompt,
+    required this.isSharingPaused,
     required this.routePolyline,
     required this.routeSummary,
     required this.selectedRiderUid,
@@ -81,6 +84,21 @@ class HomeUiState {
   /// resolved).
   final bool showBackgroundSharingPrompt;
 
+  /// True exactly once, the moment this device's own live position first
+  /// lands within [reachedDestinationRadiusMeters] of the ride's
+  /// destination — see [HomeViewModel.dismissReachedDestinationPrompt].
+  /// The View shows a confirm dialog offering to stop sharing while this
+  /// is true, then dismisses it; it never re-arms for the rest of the
+  /// ride, even if the rider leaves the radius and comes back.
+  final bool showReachedDestinationPrompt;
+
+  /// True once this device has stopped reporting its own position by
+  /// choice (see [HomeViewModel.stopSharingLocation]), as opposed to
+  /// [isLocationUnavailable]'s permission/services-off case. The View
+  /// shows a banner with a way back in ([HomeViewModel.resumeSharingLocation])
+  /// while this is true.
+  final bool isSharingPaused;
+
   /// The route from self to the destination, decoded and ready to draw
   /// — empty until it resolves (no destination, self location not
   /// known yet, or the Routes API call failed). A failure here is never
@@ -116,6 +134,7 @@ class RiderVm {
     required this.isOnline,
     required this.isSelf,
     required this.isHost,
+    required this.hasReachedDestination,
   });
 
   final String uid;
@@ -129,6 +148,14 @@ class RiderVm {
   final bool isOnline;
   final bool isSelf;
   final bool isHost;
+
+  /// Whether this rider's current position is within
+  /// [reachedDestinationRadiusMeters] of the ride's destination — false
+  /// whenever the ride has no destination set. Purely geometric and
+  /// recomputed live, same as [distanceLabel]; not the same thing as
+  /// [HomeUiState.showReachedDestinationPrompt], which only ever applies
+  /// to self and fires once.
+  final bool hasReachedDestination;
 }
 
 /// Everything the Rider Info modal needs for one rider — resolved on
@@ -150,6 +177,7 @@ class RiderInfoDetails {
     required this.canNavigate,
     required this.canRemove,
     required this.isSelf,
+    required this.hasReachedDestination,
   });
 
   final String uid;
@@ -158,6 +186,10 @@ class RiderInfoDetails {
   final bool isHost;
   final bool isOnline;
   final bool isSelf;
+
+  /// See [RiderVm.hasReachedDestination] — same computation, just also
+  /// exposed here for the Rider Info modal's name-row chip.
+  final bool hasReachedDestination;
 
   /// "Online" or e.g. "Last seen 3m ago".
   final String lastUpdatedLabel;
@@ -204,6 +236,9 @@ class HomeViewModel extends _$HomeViewModel {
   bool _isFollowingUser = true;
   bool _isLocationUnavailable = false;
   bool _showBackgroundSharingPrompt = false;
+  bool _hasShownReachedPrompt = false;
+  bool _showReachedDestinationPrompt = false;
+  bool _isSharingPaused = false;
   RouteInfo? _route;
   List<Rider> _lastRiders = const [];
   String? _selectedRiderUid;
@@ -324,6 +359,7 @@ class HomeViewModel extends _$HomeViewModel {
         // that ever touches it again).
         _selfLocation = LatLng(position.latitude, position.longitude);
         _hasResolvedSelfLocation = true;
+        _checkReachedDestination();
         _publish();
         // Each emission fires its own write; a rejected/failed one must
         // not take down this subscription (an uncaught Future error here
@@ -420,6 +456,7 @@ class HomeViewModel extends _$HomeViewModel {
     if (position == null) return;
     _selfLocation = LatLng(position.latitude, position.longitude);
     _hasResolvedSelfLocation = true;
+    _checkReachedDestination();
     _publish();
     final positions = ref.read(positionRepositoryProvider);
     unawaited(
@@ -434,6 +471,62 @@ class HomeViewModel extends _$HomeViewModel {
             debugPrint('syncLocationNow reportPosition failed for ${_ride.id}: $error');
           }),
     );
+  }
+
+  /// Flags [HomeUiState.showReachedDestinationPrompt] the first time this
+  /// device's own live position lands within
+  /// [reachedDestinationRadiusMeters] of the ride's destination.
+  /// [_hasShownReachedPrompt] is sticky — once set, this never re-arms
+  /// for the rest of the ride, even if the rider wanders back out of the
+  /// radius and in again. Doesn't publish itself; every call site already
+  /// calls [_publish] right after.
+  void _checkReachedDestination() {
+    if (_hasShownReachedPrompt) return;
+    final destination = _ride.destination;
+    if (destination == null) return;
+    if (!isNearDestination(_selfLocation, destination)) return;
+    _hasShownReachedPrompt = true;
+    _showReachedDestinationPrompt = true;
+  }
+
+  /// Closes the reached-destination prompt without changing sharing — the
+  /// dialog's "Keep sharing" choice. [stopSharingLocation] closes it too,
+  /// for "Stop sharing"; either way [_hasShownReachedPrompt] staying true
+  /// is what keeps the prompt from reappearing.
+  void dismissReachedDestinationPrompt() {
+    _showReachedDestinationPrompt = false;
+    _publish();
+  }
+
+  /// Stops this device's own position reporting and marks it offline
+  /// right away, rather than waiting for [staleRiderThreshold] to notice
+  /// — the reached-destination prompt's "Stop sharing" choice. Unlike
+  /// [endOrLeaveRide], this keeps the rider in the ride, still watching
+  /// everyone else; [resumeSharingLocation] is the way back.
+  void stopSharingLocation() {
+    unawaited(_positionReportSubscription?.cancel());
+    _positionReportSubscription = null;
+    _isSharingPaused = true;
+    _publish();
+    final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
+    if (uid == null) return;
+    unawaited(
+      ref
+          .read(positionRepositoryProvider)
+          .markOffline(rideId: _ride.id, uid: uid)
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint('markOffline failed for ${_ride.id}: $error');
+          }),
+    );
+  }
+
+  /// Turns position reporting back on after [stopSharingLocation] — the
+  /// paused-sharing banner's call to action.
+  void resumeSharingLocation() {
+    if (_positionReportSubscription != null) return;
+    _isSharingPaused = false;
+    _publish();
+    _startReportingPosition();
   }
 
   /// Re-acquires the device's location, recenters on it, and marks the
@@ -635,6 +728,8 @@ class HomeViewModel extends _$HomeViewModel {
       canNavigate: !rider.isSelf,
       canRemove: _isHost && !rider.isSelf,
       isSelf: rider.isSelf,
+      hasReachedDestination:
+          destination != null && isNearDestination(rider.location, destination),
     );
   }
 
@@ -713,27 +808,49 @@ class HomeViewModel extends _$HomeViewModel {
     unawaited(_computeRouteToDestinationIfNeeded());
   }
 
-  /// Computes the route from self to the destination once, the first
-  /// time both are known — not on every position update: the destination
-  /// is a fixed meet-up pin, not turn-by-turn navigation, so continuously
-  /// recomputing as the rider moves would just be a paid API call for a
-  /// line that wouldn't visibly change much ride to ride.
+  /// Computes the route from this rider's starting point to the
+  /// destination once, the first time both are known — not on every
+  /// position update: the destination is a fixed meet-up pin, not
+  /// turn-by-turn navigation, so continuously recomputing as the rider
+  /// moves would just be a paid API call for a line that wouldn't
+  /// visibly change much ride to ride.
+  ///
+  /// The origin is [PositionRepository.resolveStartLocation], not
+  /// `_selfLocation` directly — `_selfLocation` is wherever this device
+  /// is the instant this happens to run, which is only actually "the
+  /// start" the very first time. Closing and reopening the app mid-ride
+  /// re-runs this same method (a fresh `HomeViewModel`, so
+  /// `_hasRequestedRoute` resets too), and without a persisted start it
+  /// would silently redraw this route from wherever the rider is by the
+  /// time they reopen the app instead of where they actually began.
   Future<void> _computeRouteToDestinationIfNeeded() async {
     if (_hasRequestedRoute) return;
     final destination = _ride.destination;
     if (destination == null) return;
+    final uid = ref.read(firebaseAuthServiceProvider).currentUser?.uid;
+    if (uid == null) return;
     _hasRequestedRoute = true;
 
     try {
-      final route = await ref
-          .read(routesRepositoryProvider)
-          .computeRoute(
-            origin: _selfLocation,
-            destination: LatLng(destination.lat, destination.lng),
+      final startLocation = await ref
+          .read(positionRepositoryProvider)
+          .resolveStartLocation(
+            rideId: _ride.id,
+            uid: uid,
+            lat: _selfLocation.latitude,
+            lng: _selfLocation.longitude,
           );
       // See _resolvePositionReporting's own comment — same guard, same
       // reason: the await above is an async gap this provider could have
       // been disposed during.
+      if (!ref.mounted) return;
+      final route = await ref
+          .read(routesRepositoryProvider)
+          .computeRoute(
+            origin: startLocation,
+            destination: LatLng(destination.lat, destination.lng),
+          );
+      // Same reason again — a second, independent async gap.
       if (!ref.mounted) return;
       _route = route;
       _publish();
@@ -778,6 +895,8 @@ class HomeViewModel extends _$HomeViewModel {
       isFollowingUser: _isFollowingUser,
       isLocationUnavailable: _isLocationUnavailable,
       showBackgroundSharingPrompt: _showBackgroundSharingPrompt,
+      showReachedDestinationPrompt: _showReachedDestinationPrompt,
+      isSharingPaused: _isSharingPaused,
       routePolyline: _route?.points ?? const [],
       routeSummary: _route == null ? null : _formatRouteSummary(_route!),
       selectedRiderUid: _selectedRiderUid,
@@ -812,6 +931,7 @@ class HomeViewModel extends _$HomeViewModel {
         : (_hasResolvedSelfLocation
               ? _formatDistance(_distanceFromSelf(rider))
               : '—');
+    final destination = _ride.destination;
     return RiderVm(
       uid: rider.riderId,
       displayName: rider.isSelf ? 'You' : rider.displayName,
@@ -820,6 +940,8 @@ class HomeViewModel extends _$HomeViewModel {
       isOnline: rider.isOnline,
       isSelf: rider.isSelf,
       isHost: rider.riderId == _ride.hostId,
+      hasReachedDestination:
+          destination != null && isNearDestination(rider.location, destination),
     );
   }
 

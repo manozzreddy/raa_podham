@@ -5,11 +5,13 @@ import 'package:sheet/sheet.dart';
 import '../../../theme/theme.dart';
 
 /// The physics [HomeScreen]'s outer `Sheet` drags/snaps with — also
-/// handed to every scrollable list inside [RiderSheet]/[NoRideSheet].
-/// A nested `Scrollable` only joins the sheet's own snap-on-release
-/// behavior when it declares this same [SheetPhysics] itself; left to
-/// its default physics, dragging the list body (rather than the fixed
-/// header) settles wherever the finger lifts instead of snapping.
+/// handed to every scrollable inside [RiderSheet]/[NoRideSheet]
+/// ([RiderSheet]'s whole body is one such scrollable; [NoRideSheet]'s
+/// upcoming-rides list is another, below its own separately-fixed
+/// header). A nested `Scrollable` only joins the sheet's own
+/// snap-on-release behavior when it declares this same [SheetPhysics]
+/// itself; left to its default physics, dragging it settles wherever
+/// the finger lifts instead of snapping.
 const SheetPhysics homeSheetSnapPhysics = SnapSheetPhysics(
   stops: <double>[0, 1],
 );
