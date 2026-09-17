@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // A ride's cover photo, uploaded by its host before the ride exists
+    // (ride IDs are server-generated on creation, so there's no ride to
+    // scope this to yet — see CreateRideScreen's upload-at-pick-time flow).
+    // Readable by any signed-in user (every ride member needs to see it,
+    // and a photo alone isn't sensitive); writable only by the uploading
+    // user, capped at 5MB and image-only.
+    match /rideCoverPhotos/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+  }
+}

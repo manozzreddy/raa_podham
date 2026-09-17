@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 210" role="img" aria-label="Raa Podham mark: a curved sunrise-gradient road sweeping up to a lead dot, with two smaller dots trailing behind it">
+  <defs>
+    <linearGradient id="roadGradient" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1C2541"/>
+      <stop offset="55%" stop-color="#FF7A33"/>
+      <stop offset="100%" stop-color="#FFB648"/>
+    </linearGradient>
+    <radialGradient id="leadGlow">
+      <stop offset="0%" stop-color="#FFB648" stop-opacity="0.55"/>
+      <stop offset="65%" stop-color="#FFB648" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFB648" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path d="M 43 177 C 60 113, 117 153, 173 60" fill="none" stroke="url(#roadGradient)" stroke-width="20" stroke-linecap="round"/>
+  <circle cx="73.8" cy="137.9" r="9" fill="#1C2541" opacity="0.55"/>
+  <circle cx="115.6" cy="118.9" r="13" fill="#FF7A33" opacity="0.85"/>
+  <circle cx="173" cy="60" r="34" fill="url(#leadGlow)"/>
+  <circle cx="173" cy="60" r="20" fill="#FFB648"/>
+</svg>

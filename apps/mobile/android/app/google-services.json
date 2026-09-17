@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "21519965328",
+    "firebase_url": "https://raa-podham-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "raa-podham",
+    "storage_bucket": "raa-podham.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:21519965328:android:290dbda3c7fb4e3ba5cc15",
+        "android_client_info": {
+          "package_name": "in.manojreddy.raa_podham"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "21519965328-qlesg09sgsktlt2nka8mabo0d6sjgv7u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "in.manojreddy.raa_podham",
+            "certificate_hash": "55989486766ddfa21d5448327c28552e6a6b774d"
+          }
+        },
+        {
+          "client_id": "21519965328-55kr71f9h52favkovsdlbp96au8vks4k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAp_KqHrG46Y2fGfmL85UEpXCwc2rNkmeA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "21519965328-55kr71f9h52favkovsdlbp96au8vks4k.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "21519965328-ba2a68c6o4vh463k1hvjc96c8075h71b.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.dynamicarraytech.raaPodham"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

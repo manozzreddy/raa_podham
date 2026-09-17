@@ -1,0 +1,10 @@
+# Compiled binaries (go build ./... with no -o still can't produce these
+# except at the module root, but keep this as a safety net)
+/backend
+/api
+
+# air's hot-reload build output (see .air.toml)
+/tmp
+
+# Editor/OS cruft
+.DS_Store

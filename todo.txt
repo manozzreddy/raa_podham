@@ -1,0 +1,19 @@
+Still missing, unchanged from before:
+- No way to remove a problematic rider, only ending the whole ride
+- Nothing stops a user from having multiple simultaneous active rides
+- No live "ride ended" notification, RidesViewModel still fetches once, not as a stream
+- No "someone joined" announcement
+- No ride editing after creation
+- Web is unconfigured (Google Sign-In needs its own web OAuth client, not present)
+- No deep links, invites are still a plain shared code
+- Home feature still has zero test coverage, including everything just built
+- No backend handler level tests
+- No CI pipeline
+- No crash reporting or analytics
+- No rate limiting on the Places/Routes proxy
+
+One small thing worth flagging while I was in this code: the backend's GOOGLE_PLACES_API_KEY config var is now doing double duty for both Places and Routes, since they share a key. Left the name as is to avoid touching your .env file, but it's a bit of a misnomer now, a cheap rename whenever you want it.
+
+
+1. Background location picking.
+2. 
